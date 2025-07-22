@@ -1,7 +1,7 @@
-use chrono::Utc;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use clap::{Arg, Command};
 use colored::*;
-use rusqlite::{Connection, Result};
+use rusqlite::{Connection, Result as SqlResult};
 use std::env;
 use std::fmt;
 use std::fs;
@@ -13,6 +13,39 @@ use uuid::Uuid;
 const MAX_NAME_VIEW_LENGTH: usize = 70;
 const SHORT_ID_LENGTH: usize = 8;
 const DESCRIPTION_INDENTATION_LENGHT: usize = 12;
+
+#[derive(Debug)]
+enum TaskError {
+    Database(rusqlite::Error),
+    Io(io::Error),
+    InvalidId(String),
+    InvalidDate(String),
+    InvalidInput(String),
+}
+
+impl From<rusqlite::Error> for TaskError {
+    fn from(err: rusqlite::Error) -> Self {
+        TaskError::Database(err)
+    }
+}
+
+impl From<io::Error> for TaskError {
+    fn from(err: io::Error) -> Self {
+        TaskError::Io(err)
+    }
+}
+
+impl fmt::Display for TaskError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TaskError::Database(e) => write!(f, "Database error: {}", e),
+            TaskError::Io(e) => write!(f, "IO error: {}", e),
+            TaskError::InvalidId(e) => write!(f, "Invalid ID: {}", e),
+            TaskError::InvalidDate(e) => write!(f, "Invalid date: {}", e),
+            TaskError::InvalidInput(e) => write!(f, "Invalid input: {}", e),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 enum Status {
@@ -51,29 +84,243 @@ struct Task {
     name: String,
     description: String,
     status: Status,
+    due_date: Option<DateTime<Utc>>,
 }
 
 impl Task {
-    fn new(name: String, description: Option<String>) -> Self {
-        Task {
+    fn new(
+        name: String,
+        description: Option<String>,
+        due_date: Option<DateTime<Utc>>,
+    ) -> Result<Self, TaskError> {
+        validate_task_name(&name)?;
+
+        Ok(Task {
             id: Uuid::new_v4().to_string(),
             date: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             name,
             description: description.unwrap_or_default(),
             status: Status::Pending,
-        }
+            due_date,
+        })
     }
 }
 
 #[derive(Debug)]
-struct Config {
-    show_descriptions: bool,
-    delete_database: bool,
-    task_name: Option<String>,
-    description: Option<String>,
+enum TaskCommand {
+    Add {
+        name: String,
+        description: Option<String>,
+        due_date: Option<DateTime<Utc>>,
+    },
+    List {
+        status: Option<Status>,
+        show_all: bool,
+        show_descriptions: bool,
+    },
+    Show {
+        id: String,
+    },
+    UpdateStatus {
+        id: String,
+        status: Status,
+    },
+    DeleteDatabase,
 }
 
-fn parse_args() -> Config {
+struct TaskManager {
+    conn: Connection,
+}
+
+impl TaskManager {
+    fn new() -> Result<Self, TaskError> {
+        let conn = init_db()?;
+        Ok(TaskManager { conn })
+    }
+
+    fn add_task(&self, task: Task) -> Result<(), TaskError> {
+        let due_date_str = task
+            .due_date
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_default();
+
+        self.conn.execute(
+            "INSERT INTO tasks (id, date, name, description, status, due_date) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            [
+                &task.id,
+                &task.date,
+                &task.name,
+                &task.description,
+                &task.status.to_string(),
+                &due_date_str,
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn list_tasks(&self, status: Option<Status>, show_all: bool) -> Result<Vec<Task>, TaskError> {
+        let (query, params) = build_task_query(status.as_ref(), show_all);
+        let mut stmt = self.conn.prepare(query)?;
+
+        let mut tasks = Vec::new();
+        let row_mapper = |row: &rusqlite::Row| self.row_to_task(row);
+
+        let task_iter = if let Some(status_param) = params {
+            stmt.query_map([status_param], row_mapper)?
+        } else {
+            stmt.query_map([], row_mapper)?
+        };
+
+        for task_result in task_iter {
+            tasks.push(task_result?);
+        }
+
+        Ok(tasks)
+    }
+
+    fn find_task_by_id(&self, short_id: &str) -> Result<Option<Task>, TaskError> {
+        let matching_ids = self.find_matching_ids(short_id)?;
+
+        match matching_ids.len() {
+            0 => Ok(None),
+            1 => {
+                let mut stmt = self.conn.prepare(
+                    "SELECT id, date, name, description, status, due_date FROM tasks WHERE id = ?1",
+                )?;
+                let mut rows = stmt.query_map([&matching_ids[0]], |row| self.row_to_task(row))?;
+
+                if let Some(task_result) = rows.next() {
+                    Ok(Some(task_result?))
+                } else {
+                    Ok(None)
+                }
+            }
+            _ => Err(TaskError::InvalidId(format!(
+                "Ambiguous ID '{}', matches: {}",
+                short_id,
+                matching_ids
+                    .iter()
+                    .map(|id| &id[..SHORT_ID_LENGTH])
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))),
+        }
+    }
+
+    fn update_task_status(&self, short_id: &str, new_status: Status) -> Result<bool, TaskError> {
+        let matching_ids = self.find_matching_ids(short_id)?;
+
+        match matching_ids.len() {
+            0 => Ok(false),
+            1 => {
+                let updated = self.conn.execute(
+                    "UPDATE tasks SET status = ?1 WHERE id = ?2",
+                    [&new_status.to_string(), &matching_ids[0]],
+                )?;
+                Ok(updated > 0)
+            }
+            _ => Err(TaskError::InvalidId(format!(
+                "Ambiguous ID '{}', matches: {}",
+                short_id,
+                matching_ids
+                    .iter()
+                    .map(|id| &id[..SHORT_ID_LENGTH])
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))),
+        }
+    }
+
+    fn find_matching_ids(&self, short_id: &str) -> Result<Vec<String>, TaskError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM tasks WHERE id LIKE ?1 || '%'")?;
+        let mut ids = Vec::new();
+
+        let rows = stmt.query_map([short_id], |row| Ok(row.get::<_, String>(0)?))?;
+
+        for id_result in rows {
+            ids.push(id_result?);
+        }
+
+        Ok(ids)
+    }
+
+    fn row_to_task(&self, row: &rusqlite::Row) -> SqlResult<Task> {
+        let status_str: String = row.get(4)?;
+        let status = Status::from_str(&status_str).unwrap_or(Status::Pending);
+        let due_date_str: String = row.get(5)?;
+
+        let due_date = if due_date_str.is_empty() {
+            None
+        } else {
+            NaiveDateTime::parse_from_str(&due_date_str, "%Y-%m-%d %H:%M:%S")
+                .ok()
+                .map(|dt| dt.and_utc())
+        };
+
+        Ok(Task {
+            id: row.get(0)?,
+            date: row.get(1)?,
+            name: row.get(2)?,
+            description: row.get(3)?,
+            status,
+            due_date,
+        })
+    }
+}
+
+fn validate_task_name(name: &str) -> Result<(), TaskError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(TaskError::InvalidInput(
+            "Task name cannot be empty".to_string(),
+        ));
+    }
+    if trimmed.len() > 500 {
+        return Err(TaskError::InvalidInput(
+            "Task name too long (max 500 characters)".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn parse_due_date(input: &str) -> Result<DateTime<Utc>, TaskError> {
+    let formats = ["%Y-%m-%d", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"];
+
+    for format in &formats {
+        if let Ok(dt) = NaiveDateTime::parse_from_str(input, format) {
+            return Ok(dt.and_utc());
+        }
+    }
+
+    Err(TaskError::InvalidDate(format!(
+        "Unable to parse date '{}'. Use format: YYYY-MM-DD [HH:MM[:SS]]",
+        input
+    )))
+}
+
+fn build_task_query(
+    status_filter: Option<&Status>,
+    show_all: bool,
+) -> (&'static str, Option<String>) {
+    match (show_all, status_filter) {
+        (true, _) => (
+            "SELECT id, date, name, description, status, due_date FROM tasks ORDER BY date DESC",
+            None,
+        ),
+        (false, Some(status)) => (
+            "SELECT id, date, name, description, status, due_date FROM tasks WHERE status = ?1 ORDER BY date DESC",
+            Some(status.to_string()),
+        ),
+        (false, None) => (
+            "SELECT id, date, name, description, status, due_date FROM tasks WHERE status = 'pending' ORDER BY date DESC",
+            None,
+        ),
+    }
+}
+
+fn parse_command() -> TaskCommand {
     let matches = Command::new("tarea")
         .about("A simple task manager")
         .arg(
@@ -83,6 +330,51 @@ fn parse_args() -> Config {
                 .help("Show task descriptions in list, or add description if text provided")
                 .num_args(0..=1)
                 .value_name("DESCRIPTION"),
+        )
+        .arg(
+            Arg::new("due-date")
+                .long("due")
+                .help("Set due date for new task (YYYY-MM-DD [HH:MM[:SS]])")
+                .value_name("DATE"),
+        )
+        .arg(
+            Arg::new("status")
+                .short('s')
+                .long("status")
+                .help("Filter tasks by status")
+                .value_parser(["pending", "done", "standby"])
+                .value_name("STATUS"),
+        )
+        .arg(
+            Arg::new("all")
+                .short('a')
+                .long("all")
+                .help("Show all tasks regardless of status")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("show")
+                .long("show")
+                .help("Show specific task by ID")
+                .value_name("TASK_ID"),
+        )
+        .arg(
+            Arg::new("done")
+                .long("done")
+                .help("Mark task as done")
+                .value_name("TASK_ID"),
+        )
+        .arg(
+            Arg::new("pending")
+                .long("pending")
+                .help("Mark task as pending")
+                .value_name("TASK_ID"),
+        )
+        .arg(
+            Arg::new("standby")
+                .long("standby")
+                .help("Mark task as standby")
+                .value_name("TASK_ID"),
         )
         .arg(
             Arg::new("delete-database")
@@ -98,40 +390,90 @@ fn parse_args() -> Config {
         )
         .get_matches();
 
-    let delete_database = matches.get_flag("delete-database");
+    if matches.get_flag("delete-database") {
+        return TaskCommand::DeleteDatabase;
+    }
+
+    if let Some(task_id) = matches.get_one::<String>("done") {
+        return TaskCommand::UpdateStatus {
+            id: task_id.clone(),
+            status: Status::Done,
+        };
+    }
+
+    if let Some(task_id) = matches.get_one::<String>("pending") {
+        return TaskCommand::UpdateStatus {
+            id: task_id.clone(),
+            status: Status::Pending,
+        };
+    }
+
+    if let Some(task_id) = matches.get_one::<String>("standby") {
+        return TaskCommand::UpdateStatus {
+            id: task_id.clone(),
+            status: Status::Standby,
+        };
+    }
+
+    if let Some(task_id) = matches.get_one::<String>("show") {
+        return TaskCommand::Show {
+            id: task_id.clone(),
+        };
+    }
+
     let task_name = matches
         .get_many::<String>("task")
         .map(|vals| vals.map(|s| s.as_str()).collect::<Vec<_>>().join(" "))
         .filter(|s| !s.is_empty());
 
-    let (show_descriptions, description) =
-        if let Some(desc_vals) = matches.get_many::<String>("description") {
+    if let Some(name) = task_name {
+        let description = if let Some(desc_vals) = matches.get_many::<String>("description") {
             let desc_text = desc_vals.map(|s| s.as_str()).collect::<Vec<_>>();
             if desc_text.is_empty() {
-                (true, None)
+                None
             } else {
-                (false, Some(desc_text.join(" ")))
+                Some(desc_text.join(" "))
             }
-        } else if matches.contains_id("description") {
-            (true, None)
         } else {
-            (false, None)
+            None
         };
 
-    Config {
+        let due_date = matches
+            .get_one::<String>("due-date")
+            .and_then(|s| parse_due_date(s).ok());
+
+        return TaskCommand::Add {
+            name,
+            description,
+            due_date,
+        };
+    }
+
+    let show_descriptions = if let Some(desc_vals) = matches.get_many::<String>("description") {
+        desc_vals.collect::<Vec<_>>().is_empty()
+    } else {
+        matches.contains_id("description")
+    };
+
+    let status_filter = matches
+        .get_one::<String>("status")
+        .and_then(|s| Status::from_str(s).ok());
+
+    let show_all = matches.get_flag("all");
+
+    TaskCommand::List {
+        status: status_filter,
+        show_all,
         show_descriptions,
-        delete_database,
-        task_name,
-        description,
     }
 }
 
-fn get_tarea_dir() -> io::Result<PathBuf> {
+fn get_tarea_dir() -> Result<PathBuf, TaskError> {
     let home = env::var("HOME").map_err(|_| {
-        io::Error::new(
+        TaskError::Io(io::Error::new(
             io::ErrorKind::NotFound,
             "HOME environment variable not found",
-        )
+        ))
     })?;
 
     let tarea_dir = PathBuf::from(home).join(".tarea");
@@ -141,19 +483,14 @@ fn get_tarea_dir() -> io::Result<PathBuf> {
     Ok(tarea_dir)
 }
 
-fn get_db_path() -> io::Result<PathBuf> {
+fn get_db_path() -> Result<PathBuf, TaskError> {
     Ok(get_tarea_dir()?.join("tasks.db"))
 }
 
-fn init_db() -> Result<Connection> {
-    let db_path = get_db_path().map_err(|e| {
-        rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
-            Some(format!("Cannot access tarea directory: {}", e)),
-        )
-    })?;
-
+fn init_db() -> Result<Connection, TaskError> {
+    let db_path = get_db_path()?;
     let conn = Connection::open(db_path)?;
+
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY,
@@ -164,30 +501,27 @@ fn init_db() -> Result<Connection> {
         )",
         [],
     )?;
+
+    // Add due_date column if it doesn't exist
+    conn.execute("ALTER TABLE tasks ADD COLUMN due_date TEXT", [])
+        .or_else(|_| Ok::<usize, rusqlite::Error>(0))?;
+
     Ok(conn)
 }
 
-fn save_task(conn: &Connection, task: &Task) -> Result<()> {
-    conn.execute(
-        "INSERT INTO tasks (id, date, name, description, status) VALUES (?1, ?2, ?3, ?4, ?5)",
-        [
-            &task.id,
-            &task.date,
-            &task.name,
-            &task.description,
-            &task.status.to_string(),
-        ],
-    )?;
-    Ok(())
-}
-
 fn truncate_with_dots(s: &str, limit: usize) -> String {
-    if s.chars().count() <= limit {
+    if s.len() <= limit {
         return s.to_string();
     }
 
     let truncated: String = s.chars().take(limit - 3).collect();
     format!("{}...", truncated)
+}
+
+fn is_due_soon(due_date: &DateTime<Utc>) -> bool {
+    let now = Utc::now();
+    let days_until_due = (*due_date - now).num_days();
+    days_until_due <= 2 && (*due_date - now).num_days() >= 0
 }
 
 fn format_task_line(task: &Task, name_width: usize, show_description: bool) {
@@ -200,12 +534,23 @@ fn format_task_line(task: &Task, name_width: usize, show_description: bool) {
     let short_id = &task.id[..SHORT_ID_LENGTH.min(task.id.len())];
     let display_name = truncate_with_dots(&task.name, MAX_NAME_VIEW_LENGTH);
 
+    let mut date_display = task.date.dimmed().to_string();
+    if let Some(ref due_date) = task.due_date {
+        let due_str = due_date.format("%Y-%m-%d %H:%M").to_string();
+        let due_display = if is_due_soon(due_date) {
+            format!(" due: {}", due_str).bright_red()
+        } else {
+            format!(" due: {}", due_str).dimmed()
+        };
+        date_display = format!("{} {}", date_display, due_display);
+    }
+
     println!(
         "{} {} {:<width$} {}",
         format!("{:>3}", short_id).bright_black(),
         status_char,
         display_name.bright_white(),
-        task.date.dimmed(),
+        date_display,
         width = name_width
     );
 
@@ -218,47 +563,106 @@ fn format_task_line(task: &Task, name_width: usize, show_description: bool) {
     }
 }
 
-fn list_tasks(conn: &Connection, show_descriptions: bool) -> Result<()> {
-    let mut stmt =
-        conn.prepare("SELECT id, date, name, description, status FROM tasks ORDER BY date DESC")?;
-
-    let mut tasks = Vec::new();
-    let task_iter = stmt.query_map([], |row| {
-        let status_str: String = row.get(4)?;
-        let status = Status::from_str(&status_str).unwrap_or(Status::Pending);
-
-        Ok(Task {
-            id: row.get(0)?,
-            date: row.get(1)?,
-            name: row.get(2)?,
-            description: row.get(3)?,
+fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), TaskError> {
+    match command {
+        TaskCommand::Add {
+            name,
+            description,
+            due_date,
+        } => {
+            let task = Task::new(name.clone(), description, due_date)?;
+            manager.add_task(task)?;
+            println!("{} {}", "task saved:".bright_green(), name);
+        }
+        TaskCommand::List {
             status,
-        })
-    })?;
+            show_all,
+            show_descriptions,
+        } => {
+            let tasks = manager.list_tasks(status.clone(), show_all)?;
 
-    for task_result in task_iter {
-        tasks.push(task_result?);
+            if tasks.is_empty() {
+                let message = match (show_all, status) {
+                    (true, _) => "no tasks found".to_string(),
+                    (false, Some(s)) => format!("no {} tasks found", s),
+                    (false, None) => "no pending tasks found".to_string(),
+                };
+                println!("{}", message.dimmed());
+                return Ok(());
+            }
+
+            let name_width = tasks
+                .iter()
+                .map(|t| truncate_with_dots(&t.name, MAX_NAME_VIEW_LENGTH).len())
+                .max()
+                .unwrap_or(0);
+
+            for task in &tasks {
+                format_task_line(task, name_width, show_descriptions);
+            }
+        }
+        TaskCommand::Show { id } => match manager.find_task_by_id(&id)? {
+            Some(task) => {
+                println!("{}", "Task Details:".bright_cyan());
+                println!("  ID: {}", task.id.bright_white());
+                println!("  Name: {}", task.name.bright_white());
+                println!(
+                    "  Status: {}",
+                    match task.status {
+                        Status::Done => task.status.to_string().bright_green(),
+                        Status::Pending => task.status.to_string().bright_yellow(),
+                        Status::Standby => task.status.to_string().bright_blue(),
+                    }
+                );
+                println!("  Created: {}", task.date.dimmed());
+
+                if let Some(ref due_date) = task.due_date {
+                    let due_str = due_date.format("%Y-%m-%d %H:%M").to_string();
+                    let due_display = if is_due_soon(due_date) {
+                        due_str.bright_red()
+                    } else {
+                        due_str.normal()
+                    };
+                    println!("  Due: {}", due_display);
+                }
+
+                if !task.description.is_empty() {
+                    println!("  Description: {}", task.description);
+                }
+            }
+            None => println!(
+                "{}",
+                format!("Task with ID '{}' not found", id).bright_red()
+            ),
+        },
+        TaskCommand::UpdateStatus { id, status } => {
+            match manager.update_task_status(&id, status.clone())? {
+                true => {
+                    let color = match status {
+                        // status was moved above, need to clone earlier
+                        Status::Done => "green",
+                        Status::Pending => "yellow",
+                        Status::Standby => "blue",
+                    };
+                    println!(
+                        "{}",
+                        format!("Task {} marked as {}", id, status).color(color)
+                    );
+                }
+                false => println!(
+                    "{}",
+                    format!("Task with ID '{}' not found", id).bright_red()
+                ),
+            }
+        }
+        TaskCommand::DeleteDatabase => {
+            delete_database()?;
+        }
     }
-
-    if tasks.is_empty() {
-        println!("{}", "no tasks found".dimmed());
-        return Ok(());
-    }
-
-    let name_width = tasks
-        .iter()
-        .map(|t| truncate_with_dots(&t.name, MAX_NAME_VIEW_LENGTH).len())
-        .max()
-        .unwrap_or(0);
-
-    for task in &tasks {
-        format_task_line(task, name_width, show_descriptions);
-    }
-
     Ok(())
 }
 
-fn delete_database() -> io::Result<()> {
+fn delete_database() -> Result<(), TaskError> {
     print!("Are you sure you want to delete the database? This action cannot be undone. (y/N): ");
     io::stdout().flush()?;
 
@@ -273,7 +677,7 @@ fn delete_database() -> io::Result<()> {
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 println!("{}", "Database file not found".bright_yellow())
             }
-            Err(e) => return Err(e),
+            Err(e) => return Err(TaskError::Io(e)),
         }
     } else {
         println!("{}", "Database deletion cancelled".bright_yellow());
@@ -282,38 +686,17 @@ fn delete_database() -> io::Result<()> {
 }
 
 fn main() {
-    let config = parse_args();
+    let command = parse_command();
 
-    if config.delete_database {
-        if let Err(e) = delete_database() {
-            eprintln!("Error: {}", e);
+    let manager = match TaskManager::new() {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("Failed to initialize task manager: {}", e);
+            return;
         }
-    } else if let Some(task_name) = config.task_name {
-        let conn = match init_db() {
-            Ok(conn) => conn,
-            Err(e) => {
-                eprintln!("Database error: {}", e);
-                return;
-            }
-        };
+    };
 
-        let task = Task::new(task_name.clone(), config.description);
-        if let Err(e) = save_task(&conn, &task) {
-            eprintln!("Error saving task: {}", e);
-        } else {
-            println!("{} {}", "task saved:".bright_green(), task_name);
-        }
-    } else {
-        let conn = match init_db() {
-            Ok(conn) => conn,
-            Err(e) => {
-                eprintln!("Database error: {}", e);
-                return;
-            }
-        };
-
-        if let Err(e) = list_tasks(&conn, config.show_descriptions) {
-            eprintln!("Error listing tasks: {}", e);
-        }
+    if let Err(e) = execute_command(&manager, command) {
+        eprintln!("{}", e);
     }
 }
