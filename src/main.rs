@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use uuid::Uuid;
 
+const MAX_NAME_VIEW_LENGHT: usize = 70;
+
 #[derive(Debug, Clone, PartialEq)]
 enum Status {
     Pending,
@@ -140,13 +142,30 @@ fn save_task(conn: &Connection, task: &Task) -> Result<()> {
     Ok(())
 }
 
+fn truncate_with_dots(s: &str, limit: usize) -> String {
+    if s.chars().count() > limit {
+        let idx = s
+            .char_indices()
+            .nth(limit)
+            .map(|(i, _)| i)
+            .unwrap_or(s.len());
+        format!("{}...", &s[..idx])
+    } else {
+        s.to_string()
+    }
+}
+
 fn pretty_print_tasks(tasks: &[Task]) {
     if tasks.is_empty() {
         println!("{}", "no tasks found".dimmed());
         return;
     }
 
-    let name_width = tasks.iter().map(|t| t.name.len()).max().unwrap_or(0);
+    let name_width = tasks
+        .iter()
+        .map(|t| truncate_with_dots(&t.name, MAX_NAME_VIEW_LENGHT).len())
+        .max()
+        .unwrap_or(0);
 
     for task in tasks {
         let status_char = match task.status {
@@ -156,11 +175,12 @@ fn pretty_print_tasks(tasks: &[Task]) {
         };
 
         let short_id = &task.id[..8];
+        let display_name = truncate_with_dots(&task.name, MAX_NAME_VIEW_LENGHT);
         println!(
             "{} {} {:<width$} {}",
             format!("{:>3}", short_id).bright_black(),
             status_char,
-            task.name.bright_white(),
+            display_name.bright_white(),
             task.date.dimmed(),
             width = name_width
         );
