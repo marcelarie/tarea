@@ -6,7 +6,7 @@ Tasks are stored in a local SQLite database (`~/.tarea/tasks.db`) with UUID prim
 ## Build
 
 ```bash
-git clone https://github.com/your‑user/tarea.git
+git clone https://github.com/marcelarie/tarea.git
 cd tarea
 cargo build --release
 ````
