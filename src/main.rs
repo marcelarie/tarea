@@ -8,6 +8,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Status {
@@ -40,7 +41,7 @@ impl FromStr for Status {
 }
 
 struct Task {
-    id: i32,
+    id: String,
     date: String,
     name: String,
     description: String,
@@ -50,7 +51,7 @@ struct Task {
 impl Task {
     fn new(name: String, description: Option<String>) -> Self {
         Task {
-            id: 0, // Will be set by database
+            id: Uuid::new_v4().to_string(),
             date: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             name,
             description: description.unwrap_or_default(),
@@ -111,12 +112,12 @@ fn init_db() -> Result<Connection> {
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tasks (
-                id INTEGER PRIMARY KEY,
-                date TEXT NOT NULL,
-                name TEXT NOT NULL,
-                description TEXT,
-                status TEXT NOT NULL DEFAULT 'pending'
-                )",
+            id TEXT PRIMARY KEY,
+            date TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            status TEXT NOT NULL DEFAULT 'pending'
+            )",
         [],
     )?;
 
@@ -125,8 +126,10 @@ fn init_db() -> Result<Connection> {
 
 fn save_task(conn: &Connection, task: &Task) -> Result<()> {
     conn.execute(
-        "INSERT INTO tasks (date, name, description, status) VALUES (?1, ?2, ?3, ?4)",
+        "INSERT INTO tasks (id, date, name, description, status)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
         [
+            &task.id,
             &task.date,
             &task.name,
             &task.description,
@@ -152,9 +155,10 @@ fn pretty_print_tasks(tasks: &[Task]) {
             Status::Standby => "[s]".bright_blue(),
         };
 
+        let short_id = &task.id[..8];
         println!(
             "{} {} {:<width$} {}",
-            format!("{:>3}", task.id).bright_black(),
+            format!("{:>3}", short_id).bright_black(),
             status_char,
             task.name.bright_white(),
             task.date.dimmed(),
