@@ -638,11 +638,63 @@ fn format_task_line(task: &Task, name_width: usize, show_description: bool) {
 
     if show_description && !task.description.is_empty() {
         println!(
-            "{} {}",
+            "{}{}",
             " ".repeat(DESCRIPTION_INDENTATION_LENGHT),
             task.description.dimmed()
         );
     }
+}
+
+fn print_task_id(task: &Task, pad: usize) {
+    println!("{:<pad$} {}", "id".dimmed(), task.id.bright_white());
+}
+
+fn print_task_name(task: &Task, pad: usize) {
+    println!("{:<pad$} {}", "name".dimmed(), task.name.bold());
+}
+
+fn print_task_description(task: &Task, pad: usize) {
+    if !task.description.is_empty() {
+        println!("{:<pad$} {}", "details".dimmed(), task.description);
+    }
+}
+
+fn print_task_created(task: &Task, pad: usize) {
+    println!("{:<pad$} {}", "created".dimmed(), task.date.bright_white());
+}
+
+fn print_task_due_date(task: &Task, pad: usize) {
+    if let Some(ref due_date) = task.due_date {
+        let due_str = due_date.format("%Y-%m-%d %H:%M").to_string();
+        let due_display = if is_due_soon(due_date) {
+            due_str.red()
+        } else {
+            due_str.normal()
+        };
+        println!("{:<pad$} {}", "due".dimmed(), due_display);
+    }
+}
+
+enum StatusDisplay {
+    Dot,
+    Word,
+}
+
+fn print_task_status(task: &Task, pad: usize, display: StatusDisplay) {
+    let out = match display {
+        StatusDisplay::Dot => match task.status {
+            Status::Done => "●".bright_green(),
+            Status::Pending => "●".bright_yellow(),
+            Status::Standby => "●".bright_blue(),
+        },
+        StatusDisplay::Word => match task.status {
+            Status::Done => "done".bright_green(),
+            Status::Pending => "pending".bright_yellow(),
+            Status::Standby => "standby".bright_blue(),
+        },
+    };
+
+    println!("{:<pad$} {}", "status".dimmed(), out, pad = pad);
 }
 
 fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), TaskError> {
@@ -715,32 +767,13 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
 
             match task_opt {
                 Some(task) => {
-                    println!("{}", "Task Details:".bright_cyan());
-                    println!("  ID: {}", task.id.bright_white());
-                    println!("  Name: {}", task.name.bright_white());
-                    println!(
-                        "  Status: {}",
-                        match task.status {
-                            Status::Done => task.status.to_string().bright_green(),
-                            Status::Pending => task.status.to_string().bright_yellow(),
-                            Status::Standby => task.status.to_string().bright_blue(),
-                        }
-                    );
-                    println!("  Created: {}", task.date.dimmed());
-
-                    if let Some(ref due_date) = task.due_date {
-                        let due_str = due_date.format("%Y-%m-%d %H:%M").to_string();
-                        let due_display = if is_due_soon(due_date) {
-                            due_str.bright_red()
-                        } else {
-                            due_str.normal()
-                        };
-                        println!("  Due: {}", due_display);
-                    }
-
-                    if !task.description.is_empty() {
-                        println!("  Description: {}", task.description);
-                    }
+                    let pad = 8;
+                    print_task_id(&task, pad);
+                    print_task_name(&task, pad);
+                    print_task_description(&task, pad);
+                    print_task_created(&task, pad);
+                    print_task_due_date(&task, pad);
+                    print_task_status(&task, pad, StatusDisplay::Dot); // TODO: Handle the status display via config or params
                 }
                 None => println!("{}", format!("Task '{}' not found", id).bright_red()),
             }
