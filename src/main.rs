@@ -334,6 +334,24 @@ fn parse_due_date(input: &str) -> Result<DateTime<Utc>, TaskError> {
     )))
 }
 
+fn last_list_all_path() -> Result<PathBuf, TaskError> {
+    Ok(get_tarea_dir()?.join("last_list_all"))
+}
+
+fn save_last_list_all(all: bool) -> Result<(), TaskError> {
+    let path = last_list_all_path()?;
+    if all {
+        fs::write(path, b"1")?;
+    } else {
+        let _ = fs::remove_file(path);
+    }
+    Ok(())
+}
+
+fn was_last_list_all() -> bool {
+    last_list_all_path().ok().map_or(false, |p| p.exists())
+}
+
 fn is_number(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
 }
@@ -411,7 +429,7 @@ fn cli() -> Command {
         .arg(
             Arg::new("show")
                 .long("show")
-                .help("Show specific task by ID")
+                .help("Show specific task by ID (indexes the pending list; combine with --all to index the full list)")
                 .value_name("TASK_ID"),
         )
         .arg(
@@ -757,9 +775,23 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                     show_descriptions,
                 );
             }
+            save_last_list_all(show_all)?;
         }
         TaskCommand::Show { id, show_all } => {
             let task_opt = if is_number(&id) {
+                if !show_all && was_last_list_all() {
+                    let cmd = format!("tarea --all --show {}", id).italic();
+                    println!(
+                        "{} {} {}{}",
+                        "Hint:".bright_cyan().bold(),
+                        "--show".italic(),
+                        "defaults to pending. For this item in the full list, run "
+                            .dimmed(),
+                        cmd
+                    );
+                    println!();
+                }
+
                 let idx: usize = id.parse().unwrap();
                 manager
                     .list_tasks(None, show_all)?
