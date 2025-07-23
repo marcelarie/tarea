@@ -1,5 +1,9 @@
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use clap::{Arg, Command};
+use clap_complete::{
+    generate,
+    shells::{Bash, Elvish, Fish, PowerShell, Zsh},
+};
 use colored::*;
 use rusqlite::{Connection, Result as SqlResult};
 use std::env;
@@ -126,6 +130,9 @@ enum TaskCommand {
         status: Status,
     },
     DeleteDatabase,
+    Completions {
+        shell: String,
+    },
 }
 
 struct TaskManager {
@@ -360,9 +367,16 @@ fn build_task_query(
     }
 }
 
-fn parse_command() -> TaskCommand {
-    let matches = Command::new("tarea")
+fn cli() -> Command {
+    Command::new("tarea")
         .about("A simple task manager")
+        .arg(
+            Arg::new("completions")
+                .long("completions")
+                .help("Print completion script for <SHELL> to stdout")
+                .value_parser(["bash", "zsh", "fish", "powershell", "elvish"])
+                .value_name("SHELL"),
+        )
         .arg(
             Arg::new("description")
                 .short('d')
@@ -423,7 +437,10 @@ fn parse_command() -> TaskCommand {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(Arg::new("task").help("Task name to add").num_args(0..))
-        .get_matches();
+}
+
+fn parse_command() -> TaskCommand {
+    let matches = cli().get_matches();
 
     if matches.get_flag("delete-database") {
         return TaskCommand::DeleteDatabase;
@@ -453,6 +470,12 @@ fn parse_command() -> TaskCommand {
     if let Some(task_id) = matches.get_one::<String>("show") {
         return TaskCommand::Show {
             id: task_id.clone(),
+        };
+    }
+
+    if let Some(shell) = matches.get_one::<String>("completions") {
+        return TaskCommand::Completions {
+            shell: shell.clone(),
         };
     }
 
@@ -632,6 +655,18 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
             let task = Task::new(name.clone(), description, due_date)?;
             manager.add_task(task)?;
             println!("{} {}", "task saved:".bright_green(), name);
+        }
+        TaskCommand::Completions { shell } => {
+            let mut cmd = cli();
+
+            match shell.as_str() {
+                "bash" => generate(Bash, &mut cmd, "tarea", &mut io::stdout()),
+                "zsh" => generate(Zsh, &mut cmd, "tarea", &mut io::stdout()),
+                "fish" => generate(Fish, &mut cmd, "tarea", &mut io::stdout()),
+                "powershell" => generate(PowerShell, &mut cmd, "tarea", &mut io::stdout()),
+                "elvish" => generate(Elvish, &mut cmd, "tarea", &mut io::stdout()),
+                _ => unreachable!(),
+            };
         }
         TaskCommand::List {
             status,
