@@ -17,6 +17,7 @@ use uuid::Uuid;
 const MAX_NAME_VIEW_LENGTH: usize = 70;
 const SHORT_ID_LENGTH: usize = 8;
 const DESCRIPTION_INDENTATION_LENGHT: usize = 12;
+const DOT_STATUS_CHARACTER: char = '●';
 
 #[derive(Debug)]
 enum TaskError {
@@ -124,6 +125,7 @@ enum TaskCommand {
     },
     Show {
         id: String,
+        show_all: bool,
     },
     UpdateStatus {
         id: String,
@@ -470,6 +472,7 @@ fn parse_command() -> TaskCommand {
     if let Some(task_id) = matches.get_one::<String>("show") {
         return TaskCommand::Show {
             id: task_id.clone(),
+            show_all: matches.get_flag("all"),
         };
     }
 
@@ -681,11 +684,12 @@ enum StatusDisplay {
 }
 
 fn print_task_status(task: &Task, pad: usize, display: StatusDisplay) {
+    let dot = DOT_STATUS_CHARACTER.to_string();
     let out = match display {
         StatusDisplay::Dot => match task.status {
-            Status::Done => "●".bright_green(),
-            Status::Pending => "●".bright_yellow(),
-            Status::Standby => "●".bright_blue(),
+            Status::Done => dot.bright_green(),
+            Status::Pending => dot.bright_yellow(),
+            Status::Standby => dot.bright_blue(),
         },
         StatusDisplay::Word => match task.status {
             Status::Done => "done".bright_green(),
@@ -754,11 +758,11 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 );
             }
         }
-        TaskCommand::Show { id } => {
+        TaskCommand::Show { id, show_all } => {
             let task_opt = if is_number(&id) {
                 let idx: usize = id.parse().unwrap();
                 manager
-                    .list_tasks(None, true)?
+                    .list_tasks(None, show_all)?
                     .into_iter()
                     .nth(idx.saturating_sub(1))
             } else {
@@ -775,7 +779,7 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                     print_task_due_date(&task, pad);
                     print_task_status(&task, pad, StatusDisplay::Dot); // TODO: Handle the status display via config or params
                 }
-                None => println!("{}", format!("Task '{}' not found", id).bright_red()),
+                None => println!("{}", format!("Task '{}' not found", id).dimmed()),
             }
         }
         TaskCommand::UpdateStatus { id, status } => {

@@ -38,8 +38,7 @@ tarea --delete-database
 
 ### Bugs
 
-- [ ] When running --show it uses the id of the --all list not the pending
-  default list
+- [x] When running --show it uses the id of the --all list not the pending default list
 - [ ] Improve is_due_soon, should work differently
 
 ### Todo
