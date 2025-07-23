@@ -446,7 +446,7 @@ fn cli() -> Command {
         .arg(
             Arg::new("show")
                 .long("show")
-                .help("Show specific task by ID (indexes the pending list; combine with --all to index the full list)")
+                .help("Show specific task by ID")
                 .value_name("TASK_ID"),
         )
         .arg(
@@ -898,22 +898,13 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
             save_last_list_all(show_all)?;
         }
         TaskCommand::Show { id, show_all } => {
-            let task_opt = if is_number(&id) {
-                if !show_all && was_last_list_all() {
-                    let cmd = format!("tarea --all --show {}", id).italic();
-                    println!(
-                        "{} {} {}{}",
-                        "Hint:".bright_cyan().bold(),
-                        "--show".italic(),
-                        "defaults to pending. For this item in the full list, run ".dimmed(),
-                        cmd
-                    );
-                    println!();
-                }
+            // use the same --all / default view the user last displayed
+            let use_all = if show_all { true } else { was_last_list_all() };
 
+            let task_opt = if is_number(&id) {
                 let idx: usize = id.parse().unwrap();
                 manager
-                    .list_tasks(None, show_all)?
+                    .list_tasks(None, use_all)?
                     .into_iter()
                     .nth(idx.saturating_sub(1))
             } else {
@@ -935,9 +926,10 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
         }
         TaskCommand::UpdateStatus { id, status } => {
             let target_id = if is_number(&id) {
+                let use_all = was_last_list_all();
                 let idx: usize = id.parse().unwrap();
                 match manager
-                    .list_tasks(None, true)?
+                    .list_tasks(None, use_all)?
                     .into_iter()
                     .nth(idx.saturating_sub(1))
                 {
