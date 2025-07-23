@@ -429,14 +429,6 @@ fn cli() -> Command {
                 .value_name("DATE"),
         )
         .arg(
-            Arg::new("status")
-                .short('s')
-                .long("status")
-                .help("Filter tasks by status")
-                .value_parser(["pending", "done", "standby"])
-                .value_name("STATUS"),
-        )
-        .arg(
             Arg::new("all")
                 .short('a')
                 .long("all")
@@ -452,19 +444,22 @@ fn cli() -> Command {
         .arg(
             Arg::new("done")
                 .long("done")
-                .help("Mark task as done")
+                .help("Mark task as done (if TASK_ID given) or list done tasks")
+                .num_args(0..=1)
                 .value_name("TASK_ID"),
         )
         .arg(
             Arg::new("pending")
                 .long("pending")
-                .help("Mark task as pending")
+                .help("Mark task as pending (if TASK_ID given) or list pending tasks")
+                .num_args(0..=1)
                 .value_name("TASK_ID"),
         )
         .arg(
             Arg::new("standby")
                 .long("standby")
-                .help("Mark task as standby")
+                .help("Mark task as standby (if TASK_ID given) or list standby tasks")
+                .num_args(0..=1)
                 .value_name("TASK_ID"),
         )
         .arg(
@@ -476,6 +471,20 @@ fn cli() -> Command {
         .arg(Arg::new("task").help("Task name to add").num_args(0..))
 }
 
+fn status_flag(matches: &clap::ArgMatches) -> Option<(Status, Option<String>)> {
+    [
+        ("done", Status::Done),
+        ("pending", Status::Pending),
+        ("standby", Status::Standby),
+    ]
+    .iter()
+    .find_map(|(flag, st)| {
+        matches
+            .contains_id(flag)
+            .then(|| (st.clone(), matches.get_one::<String>(flag).cloned()))
+    })
+}
+
 fn parse_command() -> TaskCommand {
     let matches = cli().get_matches();
 
@@ -483,24 +492,14 @@ fn parse_command() -> TaskCommand {
         return TaskCommand::DeleteDatabase;
     }
 
-    if let Some(task_id) = matches.get_one::<String>("done") {
-        return TaskCommand::UpdateStatus {
-            id: task_id.clone(),
-            status: Status::Done,
-        };
-    }
-
-    if let Some(task_id) = matches.get_one::<String>("pending") {
-        return TaskCommand::UpdateStatus {
-            id: task_id.clone(),
-            status: Status::Pending,
-        };
-    }
-
-    if let Some(task_id) = matches.get_one::<String>("standby") {
-        return TaskCommand::UpdateStatus {
-            id: task_id.clone(),
-            status: Status::Standby,
+    if let Some((st, id_opt)) = status_flag(&matches) {
+        return match id_opt {
+            Some(id) => TaskCommand::UpdateStatus { id, status: st },
+            None => TaskCommand::List {
+                status: Some(st),
+                show_all: matches.get_flag("all"),
+                show_descriptions: matches.contains_id("description"),
+            },
         };
     }
 
@@ -559,14 +558,10 @@ fn parse_command() -> TaskCommand {
         matches.contains_id("description")
     };
 
-    let status_filter = matches
-        .get_one::<String>("status")
-        .and_then(|s| Status::from_str(s).ok());
-
     let show_all = matches.get_flag("all");
 
     TaskCommand::List {
-        status: status_filter,
+        status: None,
         show_all,
         show_descriptions,
     }
