@@ -16,6 +16,9 @@ const DESCRIPTION_INDENTATION_LENGHT: usize = 12;
 const DOT_STATUS_CHARACTER: char = '●';
 const MAX_TASK_NAME_LENGTH: usize = 120;
 const SHORT_ID_LENGTH: usize = 8;
+const SIGN_LATE: &str = "!";
+const SIGN_SOON: &str = "*";
+const SIGN_DUE: &str = "-";
 
 #[derive(Debug)]
 enum TaskError {
@@ -680,12 +683,19 @@ fn format_task_line(
         if let Some(ref due_date) = task.due_date {
             let due_str = pretty_time(*due_date);
             let overdue = *due_date < Utc::now();
-            let due_display = if overdue {
-                format!("due: {} (late)", due_str).bright_red()
+            let icon = if overdue {
+                SIGN_LATE
             } else if is_due_soon(due_date) {
-                format!("due: {}", due_str).truecolor(255, 165, 0)
+                SIGN_SOON
             } else {
-                format!("due: {}", due_str).dimmed()
+                SIGN_DUE
+            };
+            let due_display = if overdue {
+                format!("{} {} (late)", icon, due_str).bright_red()
+            } else if is_due_soon(due_date) {
+                format!("{} {}", icon, due_str).truecolor(255, 165, 0)
+            } else {
+                format!("{} {}", icon, due_str).dimmed()
             };
             date_display = format!("{} {}", date_display, due_display);
         }
@@ -739,13 +749,22 @@ fn print_task_created(task: &Task, pad: usize) {
 fn print_task_due_date(task: &Task, pad: usize) {
     if let Some(ref due_date) = task.due_date {
         let due_str = pretty_time(*due_date);
-        let due_display = if *due_date < Utc::now() {
-            format!("{} (late)", due_str).bright_red()
+        let icon = if *due_date < Utc::now() {
+            SIGN_LATE
         } else if is_due_soon(due_date) {
-            due_str.red()
+            SIGN_SOON
         } else {
-            due_str.normal()
+            SIGN_DUE
         };
+        let overdue = *due_date < Utc::now();
+        let due_display = if overdue {
+            format!("{} {} (late)", icon, due_str).bright_red()
+        } else if is_due_soon(due_date) {
+            format!("{} {}", icon, due_str).bright_yellow()
+        } else {
+            format!("{} {}", icon, due_str).dimmed()
+        };
+
         println!("{:<pad$} {}", "due".dimmed(), due_display);
     }
 }
@@ -833,7 +852,7 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                     if t.status != Status::Done {
                         t.due_date
                             // leave one spare column so we never hit the right edge
-                            .map(|d| 6 + pretty_time(d).len() + 1)
+                            .map(|d| 3 + pretty_time(d).len() + 1) // " * " == 3 cells
                             .unwrap_or(0)
                     } else {
                         0
