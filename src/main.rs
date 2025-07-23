@@ -827,7 +827,8 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 .map(|t| {
                     if t.status != Status::Done {
                         t.due_date
-                            .map(|d| 6 + pretty_time(d).len()) // " due: " + time
+                            // leave one spare column so we never hit the right edge
+                            .map(|d| 6 + pretty_time(d).len() + 1)
                             .unwrap_or(0)
                     } else {
                         0
