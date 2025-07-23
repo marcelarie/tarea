@@ -679,10 +679,13 @@ fn format_task_line(
     if !is_done {
         if let Some(ref due_date) = task.due_date {
             let due_str = pretty_time(*due_date);
-            let due_display = if is_due_soon(due_date) {
-                format!(" due: {}", due_str).bright_red()
+            let overdue = *due_date < Utc::now();
+            let due_display = if overdue {
+                format!("due: {} (late)", due_str).bright_red()
+            } else if is_due_soon(due_date) {
+                format!("due: {}", due_str).truecolor(255, 165, 0)
             } else {
-                format!(" due: {}", due_str).dimmed()
+                format!("due: {}", due_str).dimmed()
             };
             date_display = format!("{} {}", date_display, due_display);
         }
@@ -736,7 +739,9 @@ fn print_task_created(task: &Task, pad: usize) {
 fn print_task_due_date(task: &Task, pad: usize) {
     if let Some(ref due_date) = task.due_date {
         let due_str = pretty_time(*due_date);
-        let due_display = if is_due_soon(due_date) {
+        let due_display = if *due_date < Utc::now() {
+            format!("{} (late)", due_str).bright_red()
+        } else if is_due_soon(due_date) {
             due_str.red()
         } else {
             due_str.normal()
