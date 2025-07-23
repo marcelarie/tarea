@@ -363,9 +363,16 @@ fn format_task_line_with_number(
     name_width: usize,
     time_width: usize,
     show_description: bool,
+    status_display: StatusDisplay,
 ) {
     print!("{:>width$}. ", number, width = number_width);
-    format_task_line(task, name_width, time_width, show_description);
+    format_task_line(
+        task,
+        name_width,
+        time_width,
+        show_description,
+        status_display,
+    );
 }
 
 fn build_task_query(
@@ -628,11 +635,27 @@ fn is_due_soon(due_date: &DateTime<Utc>) -> bool {
     diff <= Duration::days(3) // longer‑range tasks
 }
 
-fn format_task_line(task: &Task, name_width: usize, time_width: usize, show_description: bool) {
-    let status_char = match task.status {
-        Status::Done => "[d]".bright_green(),
-        Status::Pending => "[p]".bright_yellow(),
-        Status::Standby => "[s]".bright_blue(),
+fn format_task_line(
+    task: &Task,
+    name_width: usize,
+    time_width: usize,
+    show_description: bool,
+    status_display: StatusDisplay,
+) {
+    let dot = DOT_STATUS_CHARACTER.to_string();
+    let is_done = task.status == Status::Done;
+
+    let status_char = match status_display {
+        StatusDisplay::Dot => match task.status {
+            Status::Done => dot.bright_green(),
+            Status::Pending => dot.bright_yellow(),
+            Status::Standby => dot.bright_blue(),
+        },
+        StatusDisplay::Word => match task.status {
+            Status::Done => "[d]".bright_green(),
+            Status::Pending => "[p]".bright_yellow(),
+            Status::Standby => "[s]".bright_blue(),
+        },
     };
 
     let short_id = &task.id[..SHORT_ID_LENGTH.min(task.id.len())];
@@ -647,14 +670,16 @@ fn format_task_line(task: &Task, name_width: usize, time_width: usize, show_desc
         .dimmed()
         .to_string();
 
-    if let Some(ref due_date) = task.due_date {
-        let due_str = pretty_time(*due_date);
-        let due_display = if is_due_soon(due_date) {
-            format!(" due: {}", due_str).bright_red()
-        } else {
-            format!(" due: {}", due_str).dimmed()
-        };
-        date_display = format!("{} {}", date_display, due_display);
+    if !is_done {
+        if let Some(ref due_date) = task.due_date {
+            let due_str = pretty_time(*due_date);
+            let due_display = if is_due_soon(due_date) {
+                format!(" due: {}", due_str).bright_red()
+            } else {
+                format!(" due: {}", due_str).dimmed()
+            };
+            date_display = format!("{} {}", date_display, due_display);
+        }
     }
 
     println!(
@@ -804,6 +829,7 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                     name_width,
                     time_width,
                     show_descriptions,
+                    StatusDisplay::Dot,
                 );
             }
             save_last_list_all(show_all)?;
