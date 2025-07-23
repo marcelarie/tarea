@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use clap::{Arg, Command};
 use colored::*;
 use rusqlite::{Connection, Result as SqlResult};
@@ -237,7 +237,7 @@ impl TaskManager {
             .prepare("SELECT id FROM tasks WHERE id LIKE ?1 || '%'")?;
         let mut ids = Vec::new();
 
-        let rows = stmt.query_map([short_id], |row| Ok(row.get::<_, String>(0)?))?;
+        let rows = stmt.query_map([short_id], |row| row.get::<_, String>(0))?;
 
         for id_result in rows {
             ids.push(id_result?);
@@ -286,18 +286,58 @@ fn validate_task_name(name: &str) -> Result<(), TaskError> {
 }
 
 fn parse_due_date(input: &str) -> Result<DateTime<Utc>, TaskError> {
-    let formats = ["%Y-%m-%d", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"];
+    let trimmed = input.trim().to_lowercase();
 
-    for format in &formats {
-        if let Ok(dt) = NaiveDateTime::parse_from_str(input, format) {
+    match trimmed.as_str() {
+        "today" => {
+            let date = Utc::now().date_naive();
+            return Ok(date.and_hms_opt(23, 59, 59).unwrap().and_utc());
+        }
+        "tomorrow" => {
+            let date = (Utc::now() + Duration::days(1)).date_naive();
+            return Ok(date.and_hms_opt(23, 59, 59).unwrap().and_utc());
+        }
+        _ => {}
+    }
+
+    if let Some(h) = trimmed.strip_suffix('h') {
+        if let Ok(n) = h.parse::<i64>() {
+            return Ok(Utc::now() + Duration::hours(n));
+        }
+    }
+
+    if let Some(m) = trimmed.strip_suffix('m') {
+        if let Ok(n) = m.parse::<i64>() {
+            return Ok(Utc::now() + Duration::minutes(n));
+        }
+    }
+
+    let formats = ["%Y-%m-%d", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"];
+    for fmt in &formats {
+        if let Ok(dt) = NaiveDateTime::parse_from_str(&trimmed, fmt) {
             return Ok(dt.and_utc());
         }
     }
 
     Err(TaskError::InvalidDate(format!(
-        "Unable to parse date '{}'. Use format: YYYY-MM-DD [HH:MM[:SS]]",
+        "Unable to parse date '{}'. Use natural language like 'today', '2h' or an absolute date 'YYYY-MM-DD [HH:MM[:SS]]'",
         input
     )))
+}
+
+fn is_number(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
+}
+
+fn format_task_line_with_number(
+    number: usize,
+    number_width: usize,
+    task: &Task,
+    name_width: usize,
+    show_description: bool,
+) {
+    print!("{:>width$}. ", number, width = number_width);
+    format_task_line(task, name_width, show_description);
 }
 
 fn build_task_query(
@@ -334,7 +374,7 @@ fn parse_command() -> TaskCommand {
         .arg(
             Arg::new("due-date")
                 .long("due")
-                .help("Set due date for new task (YYYY-MM-DD [HH:MM[:SS]])")
+                .help("Set due date (today, tomorrow, 2h, 60m or YYYY-MM-DD [HH:MM[:SS]])")
                 .value_name("DATE"),
         )
         .arg(
@@ -382,12 +422,7 @@ fn parse_command() -> TaskCommand {
                 .help("Delete the task database")
                 .action(clap::ArgAction::SetTrue),
         )
-        .arg(
-            Arg::new("task")
-                .help("Task name to add")
-                .trailing_var_arg(true)
-                .num_args(0..),
-        )
+        .arg(Arg::new("task").help("Task name to add").num_args(0..))
         .get_matches();
 
     if matches.get_flag("delete-database") {
@@ -438,9 +473,17 @@ fn parse_command() -> TaskCommand {
             None
         };
 
-        let due_date = matches
-            .get_one::<String>("due-date")
-            .and_then(|s| parse_due_date(s).ok());
+        let due_date = if let Some(date_str) = matches.get_one::<String>("due-date") {
+            match parse_due_date(date_str) {
+                Ok(dt) => Some(dt),
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            None
+        };
 
         return TaskCommand::Add {
             name,
@@ -520,8 +563,24 @@ fn truncate_with_dots(s: &str, limit: usize) -> String {
 
 fn is_due_soon(due_date: &DateTime<Utc>) -> bool {
     let now = Utc::now();
-    let days_until_due = (*due_date - now).num_days();
-    days_until_due <= 2 && (*due_date - now).num_days() >= 0
+    let diff = *due_date - now;
+    if diff.num_seconds() < 0 {
+        return false;
+    }
+
+    if diff <= Duration::minutes(20) {
+        return true; // minute‑level tasks
+    }
+
+    if diff <= Duration::hours(24) {
+        return true; // “today” or specific‑date tasks (day‑before window)
+    }
+
+    if diff <= Duration::days(7) {
+        return diff <= Duration::days(1); // week‑range tasks
+    }
+
+    diff <= Duration::days(3) // longer‑range tasks
 }
 
 fn format_task_line(task: &Task, name_width: usize, show_description: bool) {
@@ -596,50 +655,82 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 .map(|t| truncate_with_dots(&t.name, MAX_NAME_VIEW_LENGTH).len())
                 .max()
                 .unwrap_or(0);
+            let number_width = tasks.len().to_string().len();
 
-            for task in &tasks {
-                format_task_line(task, name_width, show_descriptions);
+            for (idx, task) in tasks.iter().enumerate() {
+                format_task_line_with_number(
+                    idx + 1,
+                    number_width,
+                    task,
+                    name_width,
+                    show_descriptions,
+                );
             }
         }
-        TaskCommand::Show { id } => match manager.find_task_by_id(&id)? {
-            Some(task) => {
-                println!("{}", "Task Details:".bright_cyan());
-                println!("  ID: {}", task.id.bright_white());
-                println!("  Name: {}", task.name.bright_white());
-                println!(
-                    "  Status: {}",
-                    match task.status {
-                        Status::Done => task.status.to_string().bright_green(),
-                        Status::Pending => task.status.to_string().bright_yellow(),
-                        Status::Standby => task.status.to_string().bright_blue(),
+        TaskCommand::Show { id } => {
+            let task_opt = if is_number(&id) {
+                let idx: usize = id.parse().unwrap();
+                manager
+                    .list_tasks(None, true)?
+                    .into_iter()
+                    .nth(idx.saturating_sub(1))
+            } else {
+                manager.find_task_by_id(&id)?
+            };
+
+            match task_opt {
+                Some(task) => {
+                    println!("{}", "Task Details:".bright_cyan());
+                    println!("  ID: {}", task.id.bright_white());
+                    println!("  Name: {}", task.name.bright_white());
+                    println!(
+                        "  Status: {}",
+                        match task.status {
+                            Status::Done => task.status.to_string().bright_green(),
+                            Status::Pending => task.status.to_string().bright_yellow(),
+                            Status::Standby => task.status.to_string().bright_blue(),
+                        }
+                    );
+                    println!("  Created: {}", task.date.dimmed());
+
+                    if let Some(ref due_date) = task.due_date {
+                        let due_str = due_date.format("%Y-%m-%d %H:%M").to_string();
+                        let due_display = if is_due_soon(due_date) {
+                            due_str.bright_red()
+                        } else {
+                            due_str.normal()
+                        };
+                        println!("  Due: {}", due_display);
                     }
-                );
-                println!("  Created: {}", task.date.dimmed());
 
-                if let Some(ref due_date) = task.due_date {
-                    let due_str = due_date.format("%Y-%m-%d %H:%M").to_string();
-                    let due_display = if is_due_soon(due_date) {
-                        due_str.bright_red()
-                    } else {
-                        due_str.normal()
-                    };
-                    println!("  Due: {}", due_display);
+                    if !task.description.is_empty() {
+                        println!("  Description: {}", task.description);
+                    }
                 }
-
-                if !task.description.is_empty() {
-                    println!("  Description: {}", task.description);
-                }
+                None => println!("{}", format!("Task '{}' not found", id).bright_red()),
             }
-            None => println!(
-                "{}",
-                format!("Task with ID '{}' not found", id).bright_red()
-            ),
-        },
+        }
         TaskCommand::UpdateStatus { id, status } => {
-            match manager.update_task_status(&id, status.clone())? {
+            let target_id = if is_number(&id) {
+                let idx: usize = id.parse().unwrap();
+                match manager
+                    .list_tasks(None, true)?
+                    .into_iter()
+                    .nth(idx.saturating_sub(1))
+                {
+                    Some(t) => t.id,
+                    None => {
+                        println!("{}", format!("Task '{}' not found", id).bright_red());
+                        return Ok(());
+                    }
+                }
+            } else {
+                id.clone()
+            };
+
+            match manager.update_task_status(&target_id, status.clone())? {
                 true => {
                     let color = match status {
-                        // status was moved above, need to clone earlier
                         Status::Done => "green",
                         Status::Pending => "yellow",
                         Status::Standby => "blue",
@@ -649,12 +740,10 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                         format!("Task {} marked as {}", id, status).color(color)
                     );
                 }
-                false => println!(
-                    "{}",
-                    format!("Task with ID '{}' not found", id).bright_red()
-                ),
+                false => println!("{}", format!("Task '{}' not found", id).bright_red()),
             }
         }
+
         TaskCommand::DeleteDatabase => {
             delete_database()?;
         }

@@ -36,23 +36,29 @@ tarea --delete-database
   `[s]` standby), the (optionally truncated) name, and the creation timestamp.
 * Long names are cut after 70 characters and suffixed with `...`.
 
+### Bugs
+
+- [ ] When running --show it uses the id of the --all list not the pending
+  default list
+- [ ] Improve is_due_soon, should work differently
+
 ### Todo
 
 - [x] Add a new task
   - [x] With uuid
   - [x] With description
   - [x] With creation date
-- [ ] Print tasks
+- [x] Print tasks
   - [x] Print a list of all the tasks
-    - [ ] Print only pending if no arg is passed
-  - [ ] Print specific status
-  - [ ] Print one task
-- [ ] Change task status
-  - [ ] to done
-  - [ ] to pending
-  - [ ] to standby
-- [ ] Add due date
-  - [ ] Show due date in red color when its close
+    - [x] Print only pending if no arg is passed
+  - [x] Print specific status
+  - [x] Print one task
+- [x] Change task status
+  - [x] to done
+  - [x] to pending
+  - [x] to standby
+- [x] Add due date
+  - [x] Show due date in red color when its close
 - [ ] Show small graph of task
 
 #### Nice to haves
