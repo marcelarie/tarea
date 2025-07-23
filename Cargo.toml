@@ -1,20 +1,22 @@
 [package]
 name = "tarea"
 version = "0.1.0"
-edition = "2024"
 authors = ["Marcel Arie"]
+edition = "2024"
 description = "small task manager"
-license = "MIT"
 readme = "README.md"
-repository = "https://github.com/marcelarie/tarea"
 homepage = "https://github.com/marcelarie/tarea"
-keywords = ["cli", "tasks", "productivity"]
+repository = "https://github.com/marcelarie/tarea"
+license = "MIT"
+keywords = ["cli", "productivity", "tasks"]
 categories = ["command-line-utilities"]
 
 [dependencies]
+chrono = { version = "0.4.41", features = ["serde"] }
 clap = { version = "4.5.41", features = ["derive"] }
 clap_complete = "4.5"
-rusqlite = "0.31"
-chrono = { version = "0.4.41", features = ["serde"] }
 colored = "3.0.0"
+rusqlite = "0.31"
+terminal_size = "0.3"
+textwrap = "0.16"
 uuid = { version = "1.17.0", features = ["v4"] }

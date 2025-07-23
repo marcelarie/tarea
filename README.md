@@ -1,7 +1,7 @@
 # tarea
 
 `tarea` is a very small command‑line task manager written in Rust.  
-Tasks are stored in a local SQLite database (`~/.tarea/tasks.db`) with UUID primary keys.
+Tasks are stored in a local SQLite database `~/.tarea/tasks.db`.
 
 ![tarea-demo](https://github.com/user-attachments/assets/53c8a24c-561c-453c-b395-e87f51eac06d)
 
@@ -41,9 +41,7 @@ tarea --delete-database
 
 ### Display
 
-* Each task shows an 8‑character UUID prefix, status (`[p]` pending, `[d]` done,
-  `[s]` standby), the (optionally truncated) name, and the creation timestamp.
-* Long names are cut after 70 characters and suffixed with `...`.
+* Each task shows an 8‑character UUID prefix, status, name, and the creation timestamp.
 
 ### Bugs
 

@@ -1,23 +1,21 @@
-use chrono::{DateTime, Days, Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use clap::{Arg, Command};
-use clap_complete::{
-    generate,
-    shells::{Bash, Elvish, Fish, PowerShell, Zsh},
-};
+use clap_complete::generate;
+use clap_complete::shells::{Bash, Elvish, Fish, PowerShell, Zsh};
 use colored::*;
 use rusqlite::{Connection, Result as SqlResult};
-use std::env;
-use std::fmt;
-use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::{env, fmt, fs};
+use terminal_size::{Width, terminal_size};
+use textwrap::wrap;
 use uuid::Uuid;
 
-const MAX_NAME_VIEW_LENGTH: usize = 70;
-const SHORT_ID_LENGTH: usize = 8;
 const DESCRIPTION_INDENTATION_LENGHT: usize = 12;
 const DOT_STATUS_CHARACTER: char = '●';
+const MAX_TASK_NAME_LENGTH: usize = 120;
+const SHORT_ID_LENGTH: usize = 8;
 
 #[derive(Debug)]
 enum TaskError {
@@ -43,11 +41,11 @@ impl From<io::Error> for TaskError {
 impl fmt::Display for TaskError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TaskError::Database(e) => write!(f, "Database error: {}", e),
-            TaskError::Io(e) => write!(f, "IO error: {}", e),
-            TaskError::InvalidId(e) => write!(f, "Invalid ID: {}", e),
-            TaskError::InvalidDate(e) => write!(f, "Invalid date: {}", e),
-            TaskError::InvalidInput(e) => write!(f, "Invalid input: {}", e),
+            TaskError::Database(e) => write!(f, "{} {}", "Database error:".bright_red(), e),
+            TaskError::Io(e) => write!(f, "{} {}", "IO error:".bright_red(), e),
+            TaskError::InvalidId(e) => write!(f, "{} {}", "Invalid ID:".bright_yellow(), e),
+            TaskError::InvalidDate(e) => write!(f, "{} {}", "Invalid date:".bright_yellow(), e),
+            TaskError::InvalidInput(e) => write!(f, "{} {}", "Invalid input:".bright_yellow(), e),
         }
     }
 }
@@ -286,12 +284,20 @@ fn validate_task_name(name: &str) -> Result<(), TaskError> {
             "Task name cannot be empty".to_string(),
         ));
     }
-    if trimmed.len() > 500 {
-        return Err(TaskError::InvalidInput(
-            "Task name too long (max 500 characters)".to_string(),
-        ));
+    if trimmed.len() > MAX_TASK_NAME_LENGTH {
+        return Err(TaskError::InvalidInput(format!(
+            "Task name too long (max {MAX_TASK_NAME_LENGTH} characters). \
+          Put additional details in the description.",
+        )));
     }
+
     Ok(())
+}
+
+fn term_width() -> usize {
+    terminal_size()
+        .map(|(Width(w), _)| w as usize)
+        .unwrap_or(80)
 }
 
 fn parse_due_date(input: &str) -> Result<DateTime<Utc>, TaskError> {
@@ -659,7 +665,7 @@ fn format_task_line(
     };
 
     let short_id = &task.id[..SHORT_ID_LENGTH.min(task.id.len())];
-    let display_name = truncate_with_dots(&task.name, MAX_NAME_VIEW_LENGTH);
+    let display_name = truncate_with_dots(&task.name, name_width);
 
     let created_dt = DateTime::<Utc>::from_naive_utc_and_offset(
         NaiveDateTime::parse_from_str(&task.date, "%Y-%m-%d %H:%M:%S").unwrap(),
@@ -692,11 +698,11 @@ fn format_task_line(
     );
 
     if show_description && !task.description.is_empty() {
-        println!(
-            "{}{}",
-            " ".repeat(DESCRIPTION_INDENTATION_LENGHT),
-            task.description.dimmed()
-        );
+        let indent = " ".repeat(DESCRIPTION_INDENTATION_LENGHT);
+        let wrap_width = term_width().saturating_sub(DESCRIPTION_INDENTATION_LENGHT);
+        for line in wrap(&task.description, wrap_width) {
+            println!("{}{}", indent, line.dimmed());
+        }
     }
 }
 
@@ -802,14 +808,9 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 return Ok(());
             }
 
-            let name_width = tasks
-                .iter()
-                .map(|t| truncate_with_dots(&t.name, MAX_NAME_VIEW_LENGTH).len())
-                .max()
-                .unwrap_or(0);
             let number_width = tasks.len().to_string().len();
 
-            let time_width = tasks
+            let created_width = tasks
                 .iter()
                 .map(|t| {
                     let dt = DateTime::<Utc>::from_naive_utc_and_offset(
@@ -820,6 +821,43 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 })
                 .max()
                 .unwrap_or(0);
+
+            let max_due_extra = tasks
+                .iter()
+                .map(|t| {
+                    if t.status != Status::Done {
+                        t.due_date
+                            .map(|d| 6 + pretty_time(d).len()) // " due: " + time
+                            .unwrap_or(0)
+                    } else {
+                        0
+                    }
+                })
+                .max()
+                .unwrap_or(0);
+
+            let term = term_width();
+            let base_cols = number_width /* list index       */
+                + 2                      /* ". "             */
+                + SHORT_ID_LENGTH        /* short id         */
+                + 1                      /* space            */
+                + 1                      /* status dot       */
+                + 1                      /* space            */
+                + 1                      /* space after name */
+                ;
+
+            let time_width = created_width;
+            let cap = term
+                .saturating_sub(base_cols + time_width + max_due_extra)
+                .max(10);
+
+            // smallest width that still fits the longest *displayed* name
+            let name_width = tasks
+                .iter()
+                .map(|t| truncate_with_dots(&t.name, cap).len())
+                .max()
+                .unwrap_or(10)
+                .max(10);
 
             for (idx, task) in tasks.iter().enumerate() {
                 format_task_line_with_number(
