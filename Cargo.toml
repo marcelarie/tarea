@@ -2,6 +2,14 @@
 name = "tarea"
 version = "0.1.0"
 edition = "2024"
+authors = ["Marcel Arie"]
+description = "small task manager"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/marcelarie/tarea"
+homepage = "https://github.com/marcelarie/tarea"
+keywords = ["cli", "tasks", "productivity"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 clap = { version = "4.5.41", features = ["derive"] }
