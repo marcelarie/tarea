@@ -5,8 +5,6 @@ Tasks are stored in a local SQLite database (`~/.tarea/tasks.db`) with UUID prim
 
 ## Install
 
-Install directly from crates.io:
-
 ```bash
 cargo install tarea
 ```
