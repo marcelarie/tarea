@@ -7,6 +7,6 @@ edition = "2024"
 clap = { version = "4.5.41", features = ["derive"] }
 clap_complete = "4.5"
 rusqlite = "0.31"
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { version = "0.4.41", features = ["serde"] }
 colored = "3.0.0"
 uuid = { version = "1.17.0", features = ["v4"] }

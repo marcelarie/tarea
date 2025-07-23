@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, Days, Duration, NaiveDateTime, Utc};
 use clap::{Arg, Command};
 use clap_complete::{
     generate,
@@ -361,10 +361,11 @@ fn format_task_line_with_number(
     number_width: usize,
     task: &Task,
     name_width: usize,
+    time_width: usize,
     show_description: bool,
 ) {
     print!("{:>width$}. ", number, width = number_width);
-    format_task_line(task, name_width, show_description);
+    format_task_line(task, name_width, time_width, show_description);
 }
 
 fn build_task_query(
@@ -627,7 +628,7 @@ fn is_due_soon(due_date: &DateTime<Utc>) -> bool {
     diff <= Duration::days(3) // longer‑range tasks
 }
 
-fn format_task_line(task: &Task, name_width: usize, show_description: bool) {
+fn format_task_line(task: &Task, name_width: usize, time_width: usize, show_description: bool) {
     let status_char = match task.status {
         Status::Done => "[d]".bright_green(),
         Status::Pending => "[p]".bright_yellow(),
@@ -637,9 +638,17 @@ fn format_task_line(task: &Task, name_width: usize, show_description: bool) {
     let short_id = &task.id[..SHORT_ID_LENGTH.min(task.id.len())];
     let display_name = truncate_with_dots(&task.name, MAX_NAME_VIEW_LENGTH);
 
-    let mut date_display = task.date.dimmed().to_string();
+    let created_dt = DateTime::<Utc>::from_naive_utc_and_offset(
+        NaiveDateTime::parse_from_str(&task.date, "%Y-%m-%d %H:%M:%S").unwrap(),
+        Utc,
+    );
+    let created_str = pretty_time(created_dt);
+    let mut date_display = format!("{:>width$}", created_str, width = time_width)
+        .dimmed()
+        .to_string();
+
     if let Some(ref due_date) = task.due_date {
-        let due_str = due_date.format("%Y-%m-%d %H:%M").to_string();
+        let due_str = pretty_time(*due_date);
         let due_display = if is_due_soon(due_date) {
             format!(" due: {}", due_str).bright_red()
         } else {
@@ -681,12 +690,21 @@ fn print_task_description(task: &Task, pad: usize) {
 }
 
 fn print_task_created(task: &Task, pad: usize) {
-    println!("{:<pad$} {}", "created".dimmed(), task.date.bright_white());
+    let dt = DateTime::<Utc>::from_naive_utc_and_offset(
+        NaiveDateTime::parse_from_str(&task.date, "%Y-%m-%d %H:%M:%S").unwrap(),
+        Utc,
+    );
+    println!(
+        "{:<pad$} {}",
+        "created".dimmed(),
+        pretty_time(dt),
+        pad = pad
+    );
 }
 
 fn print_task_due_date(task: &Task, pad: usize) {
     if let Some(ref due_date) = task.due_date {
-        let due_str = due_date.format("%Y-%m-%d %H:%M").to_string();
+        let due_str = pretty_time(*due_date);
         let due_display = if is_due_soon(due_date) {
             due_str.red()
         } else {
@@ -766,12 +784,25 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 .unwrap_or(0);
             let number_width = tasks.len().to_string().len();
 
+            let time_width = tasks
+                .iter()
+                .map(|t| {
+                    let dt = DateTime::<Utc>::from_naive_utc_and_offset(
+                        NaiveDateTime::parse_from_str(&t.date, "%Y-%m-%d %H:%M:%S").unwrap(),
+                        Utc,
+                    );
+                    pretty_time(dt).len()
+                })
+                .max()
+                .unwrap_or(0);
+
             for (idx, task) in tasks.iter().enumerate() {
                 format_task_line_with_number(
                     idx + 1,
                     number_width,
                     task,
                     name_width,
+                    time_width,
                     show_descriptions,
                 );
             }
@@ -785,8 +816,7 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                         "{} {} {}{}",
                         "Hint:".bright_cyan().bold(),
                         "--show".italic(),
-                        "defaults to pending. For this item in the full list, run "
-                            .dimmed(),
+                        "defaults to pending. For this item in the full list, run ".dimmed(),
                         cmd
                     );
                     println!();
@@ -853,6 +883,41 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
         }
     }
     Ok(())
+}
+
+fn pretty_time(dt: DateTime<Utc>) -> String {
+    let now = Utc::now();
+    let secs = (dt - now).num_seconds();
+
+    if secs.abs() < 86_400 {
+        if secs >= 0 {
+            let mins = (secs + 59) / 60;
+            return if mins < 60 {
+                format!("in {}m", mins)
+            } else {
+                format!("in {}h", (mins + 59) / 60)
+            };
+        } else {
+            let mins = (-secs + 59) / 60;
+            return if mins < 60 {
+                format!("{}m ago", mins)
+            } else {
+                format!("{}h ago", (mins + 59) / 60)
+            };
+        }
+    }
+
+    let d = dt.date_naive();
+    let nd = now.date_naive();
+    let diff_days = (d - nd).num_days();
+
+    match diff_days {
+        0 => format!("today at {}", dt.format("%H:%M")),
+        -1 => format!("yesterday at {}", dt.format("%H:%M")),
+        1 => format!("tomorrow at {}", dt.format("%H:%M")),
+        -6..=6 => dt.format("%A at %H:%M").to_string(),
+        _ => dt.format("%Y-%m-%d %H:%M").to_string(),
+    }
 }
 
 fn delete_database() -> Result<(), TaskError> {
