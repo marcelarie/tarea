@@ -33,11 +33,55 @@ cargo build --release
 tarea
 
 # add a task
-tarea Finish report -d "due tomorrow"
+tarea Finish report -d "Complete quarterly sales analysis report" --due tomorrow
 
 # remove the database (confirmation required)
 tarea --delete-database
 ```
+
+## Shell completions  *(Bash · Zsh · Fish)*
+
+`tarea` can generate ready‑to‑use completion scripts and even keeps them
+**ID** aware, so you can tab‑complete flags like `--show`, `--edit`, `--done`,
+etc.
+
+### Install once (write a file)
+
+```bash
+# Bash, system‑wide
+sudo tarea --completions bash >/etc/bash_completion.d/tarea 
+
+# Zsh (user scope)
+mkdir -p ~/.zsh/completions
+tarea --completions zsh >~/.zsh/completions/_tarea
+
+# Fish (user scope)
+mkdir -p ~/.config/fish/completions
+tarea --completions fish >~/.config/fish/completions/tarea.fish
+```
+
+Restart or `source` the file and ↹‑completion is ready.
+
+### Always up‑to‑date (auto‑load in your *rc*)
+
+```bash
+# ~/.bashrc
+command -v tarea >/dev/null && eval "$(tarea --completions bash)"
+```
+
+```zsh
+# ~/.zshrc
+(( $+commands[tarea] )) && eval "$(tarea --completions zsh)"
+```
+
+```fish
+# ~/.config/fish/config.fish
+type -q tarea; and tarea --completions fish | source
+```
+
+That's it, every new shell session re‑generates completions, so they stay in sync
+with your installed `tarea` version.
+
 
 ### Display
 

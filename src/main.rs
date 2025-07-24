@@ -19,6 +19,45 @@ const SHORT_ID_LENGTH: usize = 8;
 const SIGN_LATE: char = '!';
 const SIGN_SOON: char = '*';
 const SIGN_DUE: char = '-';
+const DYNAMIC_COMPLETE_BASH: &str = r#"
+# === tarea dynamic-ID completion (auto-appended) ===
+__tarea_ids() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    COMPREPLY=( $(compgen -W "$(tarea --ids --short 2>/dev/null)" -- "$cur") )
+}
+
+# after these flags we want ID completion:
+for opt in --show --edit --done --pending --standby; do
+    complete -o default -F __tarea_ids tarea $opt
+done
+"#;
+const DYNAMIC_COMPLETE_ZSH: &str = r#"
+# === tarea dynamic-ID completion (auto-appended) ===
+_tarea_ids() { tarea --ids --short 2>/dev/null }
+compdef _tarea tarea
+_tarea() {
+  local -a opts
+  opts=(${${_tarea_ids[@]}})
+  _arguments \
+    '(--show)--show[show a task]:task ID:->ids' \
+    '(--edit)--edit[edit a task]:task ID:->ids' \
+    '(--done)--done[mark done]:task ID:->ids' \
+    '(--pending)--pending[mark pending]:task ID:->ids' \
+    '(--standby)--standby[mark standby]:task ID:->ids' \
+    '*:: :->normal'
+  case $state in
+     ids) _describe -t tasks 'tasks' opts ;;
+  esac
+}
+"#;
+const DYNAMIC_COMPLETE_FISH: &str = r#"
+function __tarea_ids
+    tarea --ids --short ^ /dev/null
+end
+for opt in --show --edit --done --pending --standby
+    complete -c tarea -n "__fish_seen_argument $opt" -a "(__tarea_ids)"
+end
+"#;
 
 #[derive(Debug)]
 enum TaskError {
@@ -147,6 +186,9 @@ enum TaskCommand {
     UpdateStatus {
         id: String,
         status: Status,
+    },
+    Ids {
+        short_only: bool,
     },
 }
 
@@ -401,11 +443,33 @@ fn save_last_list_all(all: bool) -> Result<(), TaskError> {
 }
 
 fn was_last_list_all() -> bool {
-    last_list_all_path().ok().map_or(false, |p| p.exists())
+    last_list_all_path().ok().is_some_and(|p| p.exists())
 }
 
 fn is_number(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Try to interpret `reference` as a 1-based list index first;  
+/// if that fails, fall back to a (possibly-shortened) task-ID.
+fn resolve_task(
+    manager: &TaskManager,
+    reference: &str,
+    show_all: bool,
+) -> Result<Option<Task>, TaskError> {
+    if is_number(reference) {
+        let idx: usize = reference.parse().unwrap_or(0);
+        if let Some(t) = manager
+            .list_tasks(None, show_all)?
+            .into_iter()
+            .nth(idx.saturating_sub(1))
+        {
+            return Ok(Some(t));
+        }
+        // If there is no task with that index we fall through and
+        // treat the string as an ID prefix (numeric UUIDs such as “97944653”).
+    }
+    manager.find_task_by_id(reference)
 }
 
 fn format_task_line_with_number(
@@ -528,6 +592,20 @@ fn cli() -> Command {
                 .value_name("TASK_ID"),
         )
         .arg(Arg::new("task").help("Task name to add").num_args(0..))
+        .arg(
+            Arg::new("ids")
+                .short('i')
+                .long("ids")
+                .help("Print all task IDs (add --short for 8-char prefixes)")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("short")
+                .long("short")
+                .help("Show shortened output when the chosen action supports it")
+                .global(true)
+                .action(clap::ArgAction::SetTrue),
+        )
 }
 
 fn status_flag(matches: &clap::ArgMatches) -> Option<(Status, Option<String>)> {
@@ -549,6 +627,12 @@ fn parse_command() -> TaskCommand {
 
     if matches.get_flag("delete-database") {
         return TaskCommand::DeleteDatabase;
+    }
+
+    if matches.get_flag("ids") {
+        return TaskCommand::Ids {
+            short_only: matches.get_flag("short"),
+        };
     }
 
     if let Some((status, id_opt)) = status_flag(&matches) {
@@ -938,9 +1022,18 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
             let mut cmd = cli();
 
             match shell.as_str() {
-                "bash" => generate(Bash, &mut cmd, "tarea", &mut io::stdout()),
-                "zsh" => generate(Zsh, &mut cmd, "tarea", &mut io::stdout()),
-                "fish" => generate(Fish, &mut cmd, "tarea", &mut io::stdout()),
+                "bash" => {
+                    generate(Bash, &mut cmd, "tarea", &mut io::stdout());
+                    print!("{DYNAMIC_COMPLETE_BASH}");
+                }
+                "zsh" => {
+                    generate(Zsh, &mut cmd, "tarea", &mut io::stdout());
+                    print!("{DYNAMIC_COMPLETE_ZSH}");
+                }
+                "fish" => {
+                    generate(Fish, &mut cmd, "tarea", &mut io::stdout());
+                    print!("{DYNAMIC_COMPLETE_FISH}");
+                }
                 "powershell" => generate(PowerShell, &mut cmd, "tarea", &mut io::stdout()),
                 "elvish" => generate(Elvish, &mut cmd, "tarea", &mut io::stdout()),
                 _ => unreachable!(),
@@ -1042,15 +1135,7 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
             // use the same --all / default view the user last displayed
             let use_all = if show_all { true } else { was_last_list_all() };
 
-            let task_opt = if is_number(&id) {
-                let idx: usize = id.parse().unwrap();
-                manager
-                    .list_tasks(None, use_all)?
-                    .into_iter()
-                    .nth(idx.saturating_sub(1))
-            } else {
-                manager.find_task_by_id(&id)?
-            };
+            let task_opt = resolve_task(manager, &id, use_all)?;
 
             match task_opt {
                 Some(task) => {
@@ -1071,15 +1156,7 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
         } => {
             let use_all = if show_all { true } else { was_last_list_all() };
 
-            let task_opt = if is_number(&id_or_index) {
-                let idx: usize = id_or_index.parse().unwrap();
-                manager
-                    .list_tasks(None, use_all)?
-                    .into_iter()
-                    .nth(idx.saturating_sub(1))
-            } else {
-                manager.find_task_by_id(&id_or_index)?
-            };
+            let task_opt = resolve_task(manager, &id_or_index, use_all)?;
 
             match task_opt {
                 Some(t) => println!("{}", t.name),
@@ -1096,33 +1173,14 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
         } => {
             let use_all = if show_all { true } else { was_last_list_all() };
 
-            // resolve full ID
-            let full_id = if is_number(&id_or_index) {
-                let idx: usize = id_or_index.parse().unwrap();
-                match manager
-                    .list_tasks(None, use_all)?
-                    .into_iter()
-                    .nth(idx.saturating_sub(1))
-                {
-                    Some(t) => t.id,
-                    None => {
-                        println!(
-                            "{}",
-                            format!("Task '{}' not found", id_or_index).bright_red()
-                        );
-                        return Ok(());
-                    }
-                }
-            } else {
-                match manager.find_task_by_id(&id_or_index)? {
-                    Some(t) => t.id,
-                    None => {
-                        println!(
-                            "{}",
-                            format!("Task '{}' not found", id_or_index).bright_red()
-                        );
-                        return Ok(());
-                    }
+            let full_id = match resolve_task(manager, &id_or_index, use_all)? {
+                Some(t) => t.id,
+                None => {
+                    println!(
+                        "{}",
+                        format!("Task '{}' not found", id_or_index).bright_red()
+                    );
+                    return Ok(());
                 }
             };
 
@@ -1140,22 +1198,12 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
         }
 
         TaskCommand::UpdateStatus { id, status } => {
-            let target_id = if is_number(&id) {
-                let use_all = was_last_list_all();
-                let idx: usize = id.parse().unwrap();
-                match manager
-                    .list_tasks(None, use_all)?
-                    .into_iter()
-                    .nth(idx.saturating_sub(1))
-                {
-                    Some(t) => t.id,
-                    None => {
-                        println!("{}", format!("Task '{}' not found", id).bright_red());
-                        return Ok(());
-                    }
+            let target_id = match resolve_task(manager, &id, was_last_list_all())? {
+                Some(t) => t.id,
+                None => {
+                    println!("{}", format!("Task '{}' not found", id).bright_red());
+                    return Ok(());
                 }
-            } else {
-                id.clone()
             };
 
             match manager.update_task_status(&target_id, status.clone())? {
@@ -1176,6 +1224,16 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
 
         TaskCommand::DeleteDatabase => {
             delete_database()?;
+        }
+        TaskCommand::Ids { short_only } => {
+            for t in manager.list_tasks(None, true)? {
+                let out = if short_only {
+                    &t.id[..SHORT_ID_LENGTH]
+                } else {
+                    &t.id
+                };
+                println!("{out}");
+            }
         }
     }
     Ok(())
