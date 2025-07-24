@@ -17,6 +17,9 @@ Or, from the project directory:
 cargo install --path .
 ```
 
+## Documentation
+
+Check the [docs.md](./docs.md) for a more detiled documentation.
 
 ## Build
 
@@ -49,7 +52,7 @@ etc.
 
 ```bash
 # Bash, system‑wide
-sudo tarea --completions bash >/etc/bash_completion.d/tarea 
+sudo tarea --completions bash >/etc/bash_completion.d/tarea
 
 # Zsh (user scope)
 mkdir -p ~/.zsh/completions
