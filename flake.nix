@@ -2,6 +2,7 @@
   description = "A Nix-flake-based Rust development environment";
 
   inputs = {
+    crane.url = "github:ipetkov/crane";
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
     fenix = {
       url = "https://flakehub.com/f/nix-community/fenix/0.1";
@@ -9,21 +10,26 @@
     };
   };
 
-  outputs = inputs: let
+  outputs = {
+    self,
+    nixpkgs,
+    fenix,
+    crane,
+  }: let
     supportedSystems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
     forEachSupportedSystem = f:
-      inputs.nixpkgs.lib.genAttrs supportedSystems (system:
+      nixpkgs.lib.genAttrs supportedSystems (system:
         f {
-          pkgs = import inputs.nixpkgs {
+          pkgs = import nixpkgs {
             inherit system;
             overlays = [
-              inputs.self.overlays.default
+              self.overlays.default
             ];
           };
         });
   in {
     overlays.default = final: prev: {
-      rustToolchain = with inputs.fenix.packages.${prev.stdenv.hostPlatform.system};
+      rustToolchain = with fenix.packages.${prev.stdenv.hostPlatform.system};
         combine (with stable; [
           clippy
           rustc
@@ -51,6 +57,17 @@
           RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
         };
       };
+    });
+
+    packages = forEachSupportedSystem ({pkgs}: let
+      craneLib = (crane.mkLib pkgs).overrideToolchain pkgs.rustToolchain;
+      commonArgs = {
+        src = ./.;
+        strictDeps = true;
+        buildInputs = [pkgs.openssl pkgs.sqlite];
+      };
+    in {
+      default = craneLib.buildPackage commonArgs; # 'default' obeys nix build
     });
   };
 }
