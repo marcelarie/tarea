@@ -117,6 +117,7 @@ with your installed `tarea` version.
       langauge time to db time
 - [ ] Add help for `--due` with all the natural language specified
 - [x] Print a list of names or a specific task name with `--name <optional_id>`
+- [x] Add docs
 
 #### Nice to haves
 - [ ] Encrypt task db
