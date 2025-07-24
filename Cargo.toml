@@ -20,3 +20,18 @@ rusqlite = "0.31"
 terminal_size = "0.3"
 textwrap = "0.16"
 uuid = { version = "1.17.0", features = ["v4"] }
+
+[profile.release]
+opt-level = 3        # full speed
+lto = "fat"          # good trade-off compile vs run-time
+codegen-units = 1    # maximise inlining
+panic = "abort"      # 5–10 % smaller binary & a bit faster
+
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true            # full DWARF
+strip = "none"          # keep the symbols
+lto   = "thin"
+codegen-units = 1
+

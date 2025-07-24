@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
     fenix = {
-      url = "https://flakehub.com/f/nix-community/fenix/0.1";
+      url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -17,39 +17,66 @@
           pkgs = import inputs.nixpkgs {
             inherit system;
             overlays = [
+              inputs.fenix.overlays.default
               inputs.self.overlays.default
             ];
           };
+          system = system;
         });
   in {
+    packages = forEachSupportedSystem ({
+      pkgs,
+      system,
+    }: {
+      default = let
+        rustPlatform = pkgs.makeRustPlatform {
+          rustc = pkgs.rustToolchain;
+          cargo = pkgs.rustToolchain;
+        };
+      in
+        rustPlatform.buildRustPackage {
+          pname = "tarea";
+          version = "0.1.0";
+
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+
+          buildInputs = [pkgs.sqlite];
+          nativeBuildInputs = [pkgs.pkg-config];
+          doCheck = false;
+        };
+    });
+
     overlays.default = final: prev: {
-      rustToolchain = with inputs.fenix.packages.${prev.stdenv.hostPlatform.system};
-        combine (with stable; [
-          clippy
-          rustc
-          cargo
-          rustfmt
-          rust-src
-        ]);
+      rustToolchain =
+        inputs.fenix.packages.${prev.stdenv.hostPlatform.system}
+      .latest.withComponents [
+          "cargo"
+          "clippy"
+          "rustc"
+          "rustfmt"
+          "rust-src"
+        ];
     };
 
-    devShells = forEachSupportedSystem ({pkgs}: {
+    devShells = forEachSupportedSystem ({pkgs, ...}: {
       default = pkgs.mkShell {
         packages = with pkgs; [
           rustToolchain
+          rust-analyzer
           openssl
           pkg-config
           cargo-deny
           cargo-edit
           cargo-watch
-          rust-analyzer
           sqlite
         ];
 
-        env = {
-          # Required by rust-analyzer
-          RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
-        };
+        RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
+        shellHook = ''
+          export RUSTFLAGS="-C link-arg=-L${pkgs.sqlite.out}/lib $RUSTFLAGS"
+          export LD_LIBRARY_PATH=${pkgs.sqlite.out}/lib:$LD_LIBRARY_PATH
+        '';
       };
     });
   };
