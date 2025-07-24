@@ -20,7 +20,6 @@ const SIGN_LATE: char = '!';
 const SIGN_SOON: char = '*';
 const SIGN_DUE: char = '-';
 const DYNAMIC_COMPLETE_BASH: &str = r#"
-# === tarea dynamic-ID completion (auto-appended) ===
 __tarea_ids() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     COMPREPLY=( $(compgen -W "$(tarea --ids --short 2>/dev/null)" -- "$cur") )
@@ -31,31 +30,36 @@ for opt in --show --edit --done --pending --standby; do
     complete -o default -F __tarea_ids tarea $opt
 done
 "#;
-const DYNAMIC_COMPLETE_ZSH: &str = r#"
-# === tarea dynamic-ID completion (auto-appended) ===
-_tarea_ids() { tarea --ids --short 2>/dev/null }
-compdef _tarea tarea
-_tarea() {
-  local -a opts
-  opts=(${${_tarea_ids[@]}})
-  _arguments \
-    '(--show)--show[show a task]:task ID:->ids' \
-    '(--edit)--edit[edit a task]:task ID:->ids' \
-    '(--done)--done[mark done]:task ID:->ids' \
-    '(--pending)--pending[mark pending]:task ID:->ids' \
-    '(--standby)--standby[mark standby]:task ID:->ids' \
-    '*:: :->normal'
-  case $state in
-     ids) _describe -t tasks 'tasks' opts ;;
-  esac
-}
-"#;
+// const DYNAMIC_COMPLETE_ZSH: &str = r#"
+// # Tiny helper that prints all short IDs
+// _tarea_ids() { tarea --ids --short 2>/dev/null }
+//
+// # Keep clap’s original function and wrap it
+// if ! typeset -f _tarea_orig >/dev/null; then
+//   functions[_tarea_orig]=$functions[_tarea]
+// fi
+//
+// _tarea() {
+//   # First let the auto-generated function do its job
+//   _tarea_orig "$@" && return
+//
+//   # Then add our dynamic IDs for the flags that expect one
+//   _arguments -C \
+//     '--show[show task]:task ID:_tarea_ids' \
+//     '--edit[edit task]:task ID:_tarea_ids' \
+//     '--done[mark done]:task ID:_tarea_ids' \
+//     '--pending[mark pending]:task ID:_tarea_ids' \
+//     '--standby[mark standby]:task ID:_tarea_ids' && return
+// }
+// "#;
 const DYNAMIC_COMPLETE_FISH: &str = r#"
 function __tarea_ids
-    tarea --ids --short ^ /dev/null
+    tarea --ids --short ^/dev/null
 end
-for opt in --show --edit --done --pending --standby
-    complete -c tarea -n "__fish_seen_argument $opt" -a "(__tarea_ids)"
+
+# Attach dynamic ID completion to each flag that takes a TASK_ID
+for opt in show edit done pending standby
+    complete -c tarea -n "__fish_seen_argument -l $opt" -a "(__tarea_ids)"
 end
 "#;
 
@@ -1028,11 +1032,11 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 }
                 "zsh" => {
                     generate(Zsh, &mut cmd, "tarea", &mut io::stdout());
-                    print!("{DYNAMIC_COMPLETE_ZSH}");
+                    // print!("{DYNAMIC_COMPLETE_ZSH}"); // FIX zsh ids completions
                 }
                 "fish" => {
                     generate(Fish, &mut cmd, "tarea", &mut io::stdout());
-                    print!("{DYNAMIC_COMPLETE_FISH}");
+                    // print!("{DYNAMIC_COMPLETE_FISH}"); // FIX fish ids completions
                 }
                 "powershell" => generate(PowerShell, &mut cmd, "tarea", &mut io::stdout()),
                 "elvish" => generate(Elvish, &mut cmd, "tarea", &mut io::stdout()),
