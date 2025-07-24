@@ -66,6 +66,10 @@ tarea --delete-database
 - [x] Add due date
   - [x] Show due date in red color when its close
 - [ ] Show small graph of task
+- [ ] Filter by due date with `--due` and do a reverse conversion from natural
+      langauge time to db time
+- [ ] Add help for `--due` with all the natural language specified
+- [x] Print a list of names or a specific task name with `--name <optional_id>`
 
 #### Nice to haves
 - [ ] Encrypt task db

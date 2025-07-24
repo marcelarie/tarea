@@ -16,17 +16,17 @@ const DESCRIPTION_INDENTATION_LENGHT: usize = 12;
 const DOT_STATUS_CHARACTER: char = '●';
 const MAX_TASK_NAME_LENGTH: usize = 120;
 const SHORT_ID_LENGTH: usize = 8;
-const SIGN_LATE: &str = "!";
-const SIGN_SOON: &str = "*";
-const SIGN_DUE: &str = "-";
+const SIGN_LATE: char = '!';
+const SIGN_SOON: char = '*';
+const SIGN_DUE: char = '-';
 
 #[derive(Debug)]
 enum TaskError {
     Database(rusqlite::Error),
-    Io(io::Error),
-    InvalidId(String),
     InvalidDate(String),
+    InvalidId(String),
     InvalidInput(String),
+    Io(io::Error),
 }
 
 impl From<rusqlite::Error> for TaskError {
@@ -119,22 +119,33 @@ enum TaskCommand {
         description: Option<String>,
         due_date: Option<DateTime<Utc>>,
     },
+    Completions {
+        shell: String,
+    },
+    DeleteDatabase,
+    Edit {
+        id: String,
+        show_all: bool,
+    },
     List {
         status: Option<Status>,
         show_all: bool,
         show_descriptions: bool,
     },
+    ListNames {
+        show_all: bool,
+    },
     Show {
         id: String,
+        show_all: bool,
+    },
+    ShowName {
+        id_or_index: String,
         show_all: bool,
     },
     UpdateStatus {
         id: String,
         status: Status,
-    },
-    DeleteDatabase,
-    Completions {
-        shell: String,
     },
 }
 
@@ -408,11 +419,24 @@ fn cli() -> Command {
     Command::new("tarea")
         .about("A simple task manager")
         .arg(
+            Arg::new("all")
+                .short('a')
+                .long("all")
+                .help("Show all tasks regardless of status")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("completions")
                 .long("completions")
                 .help("Print completion script for <SHELL> to stdout")
                 .value_parser(["bash", "zsh", "fish", "powershell", "elvish"])
                 .value_name("SHELL"),
+        )
+        .arg(
+            Arg::new("delete-database")
+                .long("delete-database")
+                .help("Delete the task database")
+                .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("description")
@@ -423,30 +447,31 @@ fn cli() -> Command {
                 .value_name("DESCRIPTION"),
         )
         .arg(
+            Arg::new("done")
+                .long("done")
+                .help("Mark task as done (if TASK_ID given) or list done tasks")
+                .num_args(0..=1)
+                .value_name("TASK_ID"),
+        )
+        .arg(
             Arg::new("due-date")
                 .long("due")
                 .help("Set due date (today, tomorrow, 2h, 60m or YYYY-MM-DD [HH:MM[:SS]])")
                 .value_name("DATE"),
         )
         .arg(
-            Arg::new("all")
-                .short('a')
-                .long("all")
-                .help("Show all tasks regardless of status")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("show")
-                .long("show")
-                .help("Show specific task by ID")
-                .value_name("TASK_ID"),
-        )
-        .arg(
-            Arg::new("done")
-                .long("done")
-                .help("Mark task as done (if TASK_ID given) or list done tasks")
+            Arg::new("name")
+                .long("name")
+                .help("Print only task names (optionally a single task by INDEX/ID)")
                 .num_args(0..=1)
-                .value_name("TASK_ID"),
+                .value_name("TASK"),
+        )
+        .arg(
+            Arg::new("edit")
+                .short('e')
+                .long("edit")
+                .help("Edit task name, description, or due date")
+                .value_name("EDIT"),
         )
         .arg(
             Arg::new("pending")
@@ -456,17 +481,17 @@ fn cli() -> Command {
                 .value_name("TASK_ID"),
         )
         .arg(
+            Arg::new("show")
+                .long("show")
+                .help("Show specific task by ID")
+                .value_name("TASK_ID"),
+        )
+        .arg(
             Arg::new("standby")
                 .long("standby")
                 .help("Mark task as standby (if TASK_ID given) or list standby tasks")
                 .num_args(0..=1)
                 .value_name("TASK_ID"),
-        )
-        .arg(
-            Arg::new("delete-database")
-                .long("delete-database")
-                .help("Delete the task database")
-                .action(clap::ArgAction::SetTrue),
         )
         .arg(Arg::new("task").help("Task name to add").num_args(0..))
 }
@@ -492,19 +517,39 @@ fn parse_command() -> TaskCommand {
         return TaskCommand::DeleteDatabase;
     }
 
-    if let Some((st, id_opt)) = status_flag(&matches) {
+    if let Some((status, id_opt)) = status_flag(&matches) {
         return match id_opt {
-            Some(id) => TaskCommand::UpdateStatus { id, status: st },
+            Some(id) => TaskCommand::UpdateStatus { id, status },
             None => TaskCommand::List {
-                status: Some(st),
+                status: Some(status),
                 show_all: matches.get_flag("all"),
                 show_descriptions: matches.contains_id("description"),
             },
         };
     }
 
+    if matches.contains_id("name") {
+        let id_opt = matches.get_one::<String>("name").cloned();
+        return match id_opt {
+            Some(id) => TaskCommand::ShowName {
+                id_or_index: id,
+                show_all: matches.get_flag("all"),
+            },
+            None => TaskCommand::ListNames {
+                show_all: matches.get_flag("all"),
+            },
+        };
+    }
+
     if let Some(task_id) = matches.get_one::<String>("show") {
         return TaskCommand::Show {
+            id: task_id.clone(),
+            show_all: matches.get_flag("all"),
+        };
+    }
+
+    if let Some(task_id) = matches.get_one::<String>("edit") {
+        return TaskCommand::Edit {
             id: task_id.clone(),
             show_all: matches.get_flag("all"),
         };
@@ -892,6 +937,16 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
             }
             save_last_list_all(show_all)?;
         }
+        TaskCommand::ListNames { show_all } => {
+            let tasks = manager.list_tasks(None, show_all)?;
+            if tasks.is_empty() {
+                println!("{}", "no tasks found".dimmed());
+            } else {
+                for (idx, t) in tasks.iter().enumerate() {
+                    println!("{:>3}. {}", idx + 1, t.name);
+                }
+            }
+        }
         TaskCommand::Show { id, show_all } => {
             // use the same --all / default view the user last displayed
             let use_all = if show_all { true } else { was_last_list_all() };
@@ -918,6 +973,45 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 }
                 None => println!("{}", format!("Task '{}' not found", id).dimmed()),
             }
+        }
+        TaskCommand::ShowName {
+            id_or_index,
+            show_all,
+        } => {
+            let use_all = if show_all { true } else { was_last_list_all() };
+
+            let task_opt = if is_number(&id_or_index) {
+                let idx: usize = id_or_index.parse().unwrap();
+                manager
+                    .list_tasks(None, use_all)?
+                    .into_iter()
+                    .nth(idx.saturating_sub(1))
+            } else {
+                manager.find_task_by_id(&id_or_index)?
+            };
+
+            match task_opt {
+                Some(t) => println!("{}", t.name),
+                None => println!(
+                    "{}",
+                    format!("Task '{}' not found", id_or_index).bright_red()
+                ),
+            }
+        }
+        TaskCommand::Edit { id, show_all } => {
+            // use the same --all / default view the user last displayed
+            let use_all = if show_all { true } else { was_last_list_all() };
+
+            let _task_opt = if is_number(&id) {
+                let idx: usize = id.parse().unwrap();
+                manager
+                    .list_tasks(None, use_all)?
+                    .into_iter()
+                    .nth(idx.saturating_sub(1))
+            } else {
+                manager.find_task_by_id(&id)?
+            };
+            // ... edit the task
         }
         TaskCommand::UpdateStatus { id, status } => {
             let target_id = if is_number(&id) {
