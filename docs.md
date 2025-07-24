@@ -11,8 +11,6 @@ cargo install --path .
 cargo build --release
 ```
 
----
-
 ## 1. Commands
 
 ### Adding tasks
@@ -31,8 +29,6 @@ task saved: Buy milk
 $ tarea --due tomorrow "Submit report"
 task saved: Submit report
 ```
-
----
 
 ### Listing tasks
 
@@ -65,8 +61,6 @@ $ tarea --standby
 no standby tasks found
 ```
 
----
-
 ### Showing a single task
 
 By **short UUID**:
@@ -88,8 +82,6 @@ $ tarea --show 2
 …same output…
 ```
 
----
-
 ### Names only
 
 All names:
@@ -107,8 +99,6 @@ $ tarea --name 2
 Submit report
 ```
 
----
-
 ### Changing status
 
 ```bash
@@ -125,8 +115,6 @@ Task 8f2b6c1e marked as pending
 $ tarea --standby 3c7a4b93
 Task 3c7a4b93 marked as standby
 ```
-
----
 
 ### Editing tasks
 
@@ -151,8 +139,6 @@ $ tarea --edit 2 --due "2025-08-01 18:00"
 task updated
 ```
 
----
-
 ### IDs & short IDs
 
 Full UUIDs:
@@ -171,16 +157,12 @@ $ tarea --ids --short
 a44eab09
 ```
 
----
-
 ### Shell completions
 
 ```bash
 $ tarea --completions bash > /etc/bash_completion.d/tarea
 # script written to stdout (truncated here)
 ```
-
----
 
 ### Delete the whole database
 
@@ -190,9 +172,6 @@ Are you sure you want to delete the database? This action cannot be undone. (y/N
 ```
 
 (Press `y` and enter to confirm.)
-
-
----
 
 ## 2. Flag interaction rules
 
@@ -215,8 +194,6 @@ Are you sure you want to delete the database? This action cannot be undone. (y/N
 The last value of `--all` you used **sticks** for future `--show` calls, so
 `tarea --show 2` respects your typical view.
 
----
-
 ## 3. Date & time parsing
 
 Accepted inputs for `--due` or `--edit … --due`:
@@ -228,8 +205,6 @@ Accepted inputs for `--due` or `--edit … --due`:
 | Keywords             | `today`, `tomorrow`                         | End of today / tomorrow at 23:59:59                |
 | Absolute date        | `2025-08-01`                                | Midnight of that day                               |
 | Absolute date & time | `2025-08-01 18:00`<br>`2025-08-01 18:00:30` | Interpreted exactly as supplied (seconds optional) |
-
----
 
 ## 4. Shell completion snippets
 
@@ -243,8 +218,6 @@ tarea --completions zsh  > "${fpath[1]}/_tarea"
 
 The Bash helper add **dynamic** task ID completion to flags that expect one.
 
----
-
 ## 5. Data location
 
 | Path                     | Purpose                                    |
@@ -253,8 +226,6 @@ The Bash helper add **dynamic** task ID completion to flags that expect one.
 | `~/.tarea/last_list_all` | Remembers whether your last list used `-a` |
 
 Remove the whole directory or run `--delete-database` to start fresh.
-
----
 
 ## 6. Examples in context
 
