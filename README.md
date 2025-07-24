@@ -78,9 +78,9 @@ tarea --delete-database
 
 ### Core features
 
-* [ ] **Edit a task**
-  * [ ] Change name or description
-  * [ ] Update due date
+* [x] **Edit a task**
+  * [x] Change name or description
+  * [x] Update due date
 * [ ] **Delete / archive a task**
   * [ ] Soft‑delete to an *archive* table
   * [ ] Permanently purge archived tasks

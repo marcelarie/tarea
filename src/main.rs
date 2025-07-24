@@ -124,8 +124,9 @@ enum TaskCommand {
     },
     DeleteDatabase,
     Edit {
-        id: String,
+        id_or_index: String,
         show_all: bool,
+        field: EditField,
     },
     List {
         status: Option<Status>,
@@ -147,6 +148,13 @@ enum TaskCommand {
         id: String,
         status: Status,
     },
+}
+
+#[derive(Debug)]
+enum EditField {
+    Name(String),
+    Description(String),
+    DueDate(DateTime<Utc>),
 }
 
 struct TaskManager {
@@ -288,6 +296,30 @@ impl TaskManager {
             status,
             due_date,
         })
+    }
+    fn update_name(&self, id: &str, name: &str) -> Result<bool, TaskError> {
+        validate_task_name(name)?;
+        Ok(self
+            .conn
+            .execute("UPDATE tasks SET name = ?1 WHERE id = ?2", [name, id])?
+            > 0)
+    }
+
+    fn update_description(&self, id: &str, desc: &str) -> Result<bool, TaskError> {
+        Ok(self.conn.execute(
+            "UPDATE tasks SET description = ?1 WHERE id = ?2",
+            [desc, id],
+        )? > 0)
+    }
+
+    fn update_due(&self, id: &str, due: Option<DateTime<Utc>>) -> Result<bool, TaskError> {
+        let s = due
+            .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_default();
+        Ok(self
+            .conn
+            .execute("UPDATE tasks SET due_date = ?1 WHERE id = ?2", [&s, id])?
+            > 0)
     }
 }
 
@@ -443,7 +475,7 @@ fn cli() -> Command {
                 .short('d')
                 .long("desc")
                 .help("Show task descriptions in list, or add description if text provided")
-                .num_args(0..=1)
+                .num_args(0..)
                 .value_name("DESCRIPTION"),
         )
         .arg(
@@ -457,6 +489,7 @@ fn cli() -> Command {
             Arg::new("due-date")
                 .long("due")
                 .help("Set due date (today, tomorrow, 2h, 60m or YYYY-MM-DD [HH:MM[:SS]])")
+                .num_args(1..)
                 .value_name("DATE"),
         )
         .arg(
@@ -470,6 +503,7 @@ fn cli() -> Command {
             Arg::new("edit")
                 .short('e')
                 .long("edit")
+                .num_args(1)
                 .help("Edit task name, description, or due date")
                 .value_name("EDIT"),
         )
@@ -528,6 +562,69 @@ fn parse_command() -> TaskCommand {
         };
     }
 
+    if let Some(id_val) = matches.get_one::<String>("edit") {
+        let show_all = matches.get_flag("all");
+
+        // --due  (date parsing reused)
+        if let Some(due_vals) = matches.get_many::<String>("due-date") {
+            let raw = due_vals.map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
+            let new_due = match parse_due_date(&raw) {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            };
+            return TaskCommand::Edit {
+                id_or_index: id_val.clone(),
+                show_all,
+                field: EditField::DueDate(new_due),
+            };
+        }
+
+        // -d / --desc
+        if let Some(desc_vals) = matches.get_many::<String>("description") {
+            let desc = desc_vals.map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
+            if desc.is_empty() {
+                eprintln!("No new description supplied");
+                std::process::exit(1);
+            }
+            return TaskCommand::Edit {
+                id_or_index: id_val.clone(),
+                show_all,
+                field: EditField::Description(desc),
+            };
+        }
+
+        // name (implicit OR explicit --name)
+        let new_name = if let Some(first) = matches.get_one::<String>("name") {
+            let mut name_clone = first.clone();
+            if let Some(rest) = matches.get_many::<String>("task") {
+                let tail = rest.map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
+                if !tail.is_empty() {
+                    name_clone.push(' ');
+                    name_clone.push_str(&tail);
+                }
+            }
+            name_clone
+        } else {
+            matches
+                .get_many::<String>("task")
+                .map(|vals| vals.map(|s| s.as_str()).collect::<Vec<_>>().join(" "))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| {
+                    eprintln!("No new name supplied");
+                    std::process::exit(1);
+                })
+        };
+
+        return TaskCommand::Edit {
+            id_or_index: id_val.clone(),
+            show_all,
+            field: EditField::Name(new_name),
+        };
+    }
+
     if matches.contains_id("name") {
         let id_opt = matches.get_one::<String>("name").cloned();
         return match id_opt {
@@ -543,13 +640,6 @@ fn parse_command() -> TaskCommand {
 
     if let Some(task_id) = matches.get_one::<String>("show") {
         return TaskCommand::Show {
-            id: task_id.clone(),
-            show_all: matches.get_flag("all"),
-        };
-    }
-
-    if let Some(task_id) = matches.get_one::<String>("edit") {
-        return TaskCommand::Edit {
             id: task_id.clone(),
             show_all: matches.get_flag("all"),
         };
@@ -578,8 +668,9 @@ fn parse_command() -> TaskCommand {
             None
         };
 
-        let due_date = if let Some(date_str) = matches.get_one::<String>("due-date") {
-            match parse_due_date(date_str) {
+        let due_date = if let Some(date_vals) = matches.get_many::<String>("due-date") {
+            let date_str = date_vals.map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
+            match parse_due_date(&date_str) {
                 Ok(dt) => Some(dt),
                 Err(e) => {
                     eprintln!("{}", e);
@@ -998,21 +1089,56 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 ),
             }
         }
-        TaskCommand::Edit { id, show_all } => {
-            // use the same --all / default view the user last displayed
+        TaskCommand::Edit {
+            id_or_index,
+            show_all,
+            field,
+        } => {
             let use_all = if show_all { true } else { was_last_list_all() };
 
-            let _task_opt = if is_number(&id) {
-                let idx: usize = id.parse().unwrap();
-                manager
+            // resolve full ID
+            let full_id = if is_number(&id_or_index) {
+                let idx: usize = id_or_index.parse().unwrap();
+                match manager
                     .list_tasks(None, use_all)?
                     .into_iter()
                     .nth(idx.saturating_sub(1))
+                {
+                    Some(t) => t.id,
+                    None => {
+                        println!(
+                            "{}",
+                            format!("Task '{}' not found", id_or_index).bright_red()
+                        );
+                        return Ok(());
+                    }
+                }
             } else {
-                manager.find_task_by_id(&id)?
+                match manager.find_task_by_id(&id_or_index)? {
+                    Some(t) => t.id,
+                    None => {
+                        println!(
+                            "{}",
+                            format!("Task '{}' not found", id_or_index).bright_red()
+                        );
+                        return Ok(());
+                    }
+                }
             };
-            // ... edit the task
+
+            let changed = match field {
+                EditField::Name(n) => manager.update_name(&full_id, &n)?,
+                EditField::Description(d) => manager.update_description(&full_id, &d)?,
+                EditField::DueDate(dt) => manager.update_due(&full_id, Some(dt))?,
+            };
+
+            if changed {
+                println!("{}", "task updated".bright_green());
+            } else {
+                println!("{}", "nothing changed".bright_yellow());
+            }
         }
+
         TaskCommand::UpdateStatus { id, status } => {
             let target_id = if is_number(&id) {
                 let use_all = was_last_list_all();
