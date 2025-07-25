@@ -184,12 +184,14 @@ enum TaskCommand {
     },
     ListNames {
         show_all: bool,
+        status: Option<Status>,
     },
     Show {
         id: String,
     },
     ShowName {
         id_or_index: String,
+        status: Option<Status>,
     },
     UpdateStatus {
         id: String,
@@ -648,6 +650,23 @@ fn parse_command() -> TaskCommand {
         };
     }
 
+    if matches.contains_id("name") {
+        let id_opt = matches.get_one::<String>("name").cloned();
+        let status = status_flag(&matches).map(|(s, _)| s);
+
+        if let Some(id) = id_opt {
+            return TaskCommand::ShowName {
+                id_or_index: id,
+                status,
+            };
+        }
+
+        return TaskCommand::ListNames {
+            show_all: matches.get_flag("all"),
+            status,
+        };
+    }
+
     if let Some((status, id_opt)) = status_flag(&matches) {
         return match id_opt {
             Some(id) => TaskCommand::UpdateStatus { id, status },
@@ -660,8 +679,6 @@ fn parse_command() -> TaskCommand {
     }
 
     if let Some(id_val) = matches.get_one::<String>("edit") {
-        let show_all = matches.get_flag("all");
-
         // --due  (date parsing reused)
         if let Some(due_vals) = matches.get_many::<String>("due-date") {
             let raw = due_vals.map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
@@ -716,16 +733,6 @@ fn parse_command() -> TaskCommand {
         return TaskCommand::Edit {
             id_or_index: id_val.clone(),
             field: EditField::Name(new_name),
-        };
-    }
-
-    if matches.contains_id("name") {
-        let id_opt = matches.get_one::<String>("name").cloned();
-        return match id_opt {
-            Some(id) => TaskCommand::ShowName { id_or_index: id },
-            None => TaskCommand::ListNames {
-                show_all: matches.get_flag("all"),
-            },
         };
     }
 
@@ -1168,8 +1175,8 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
             }
             save_last_list_all(show_all)?;
         }
-        TaskCommand::ListNames { show_all } => {
-            let tasks = manager.list_tasks(None, show_all)?;
+        TaskCommand::ListNames { show_all, status } => {
+            let tasks = manager.list_tasks(status, show_all)?;
             if tasks.is_empty() {
                 println!("{}", "no tasks found".dimmed());
             } else {
@@ -1195,15 +1202,32 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 None => println!("{}", format!("Task '{}' not found", id).dimmed()),
             }
         }
-        TaskCommand::ShowName { id_or_index } => {
+        TaskCommand::ShowName {
+            id_or_index,
+            status,
+        } => {
             let use_all = was_last_list_all();
-            let task_opt = resolve_task(manager, &id_or_index, use_all)?;
-
+            let task_list = manager.list_tasks(status.clone(), use_all)?;
+            let task_opt = if is_number(&id_or_index) {
+                let idx: usize = id_or_index.parse().unwrap_or(0);
+                task_list.into_iter().nth(idx.saturating_sub(1))
+            } else {
+                task_list
+                    .into_iter()
+                    .find(|t| t.id.starts_with(&id_or_index))
+            };
             match task_opt {
                 Some(t) => println!("{}", t.name),
                 None => println!(
                     "{}",
-                    format!("Task '{}' not found", id_or_index).bright_red()
+                    format!(
+                        "Task '{}' not found{}",
+                        id_or_index,
+                        status
+                            .map(|s| format!(" in {} tasks", s))
+                            .unwrap_or_default()
+                    )
+                    .bright_red()
                 ),
             }
         }
