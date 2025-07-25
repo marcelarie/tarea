@@ -20,15 +20,21 @@ const SIGN_LATE: char = '!';
 const SIGN_SOON: char = '*';
 const SIGN_DUE: char = '-';
 const DYNAMIC_COMPLETE_BASH: &str = r#"
-__tarea_ids() {
-    local cur="${COMP_WORDS[COMP_CWORD]}"
-    COMPREPLY=( $(compgen -W "$(tarea --ids --short 2>/dev/null)" -- "$cur") )
-}
+if ! declare -f _tarea_clap >/dev/null ; then
+    eval "$(declare -f _tarea | sed "s/^_tarea/_tarea_clap/")"
+fi
 
-# after these flags we want ID completion:
-for opt in --show --edit --done --pending --standby; do
-    complete -o default -F __tarea_ids tarea $opt
-done
+_tarea() {
+    local prev="${COMP_WORDS[COMP_CWORD-1]}"
+    case "$prev" in
+        --show|--edit|--done|--pending|--standby)
+            COMPREPLY=( $(compgen -W "$(tarea --ids --short 2>/dev/null)" \
+                          -- "${COMP_WORDS[COMP_CWORD]}") )
+            return
+            ;;
+    esac
+    _tarea_clap "$@"
+}
 "#;
 // const DYNAMIC_COMPLETE_ZSH: &str = r#"
 // # Tiny helper that prints all short IDs
@@ -1024,11 +1030,13 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
         }
         TaskCommand::Completions { shell } => {
             let mut cmd = cli();
+            let stdout = io::stdout();
+            let mut out = stdout.lock();
 
             match shell.as_str() {
                 "bash" => {
-                    generate(Bash, &mut cmd, "tarea", &mut io::stdout());
-                    print!("{DYNAMIC_COMPLETE_BASH}");
+                    generate(Bash, &mut cmd, "tarea", &mut out);
+                    writeln!(out, "{DYNAMIC_COMPLETE_BASH}").unwrap();
                 }
                 "zsh" => {
                     generate(Zsh, &mut cmd, "tarea", &mut io::stdout());
