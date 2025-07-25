@@ -13,6 +13,8 @@ use textwrap::wrap;
 use uuid::Uuid;
 
 const DESCRIPTION_INDENTATION_LENGHT: usize = 12;
+const WRAP_COLUMN: usize = 80;
+const MIN_DESCRIPTION_INDENT: usize = 3; // fallback for odd edge-cases
 const DOT_STATUS_CHARACTER: char = '●';
 const MAX_TASK_NAME_LENGTH: usize = 120;
 const SHORT_ID_LENGTH: usize = 8;
@@ -485,6 +487,8 @@ fn format_task_line_with_number(
     task: &Task,
     name_width: usize,
     time_width: usize,
+    indent_len: usize,
+    time_col_start: usize,
     show_description: bool,
     status_display: StatusDisplay,
 ) {
@@ -493,6 +497,8 @@ fn format_task_line_with_number(
         task,
         name_width,
         time_width,
+        indent_len,
+        time_col_start,
         show_description,
         status_display,
     );
@@ -864,6 +870,8 @@ fn format_task_line(
     task: &Task,
     name_width: usize,
     time_width: usize,
+    indent_len: usize,
+    time_col_start: usize,
     show_description: bool,
     status_display: StatusDisplay,
 ) {
@@ -909,7 +917,7 @@ fn format_task_line(
             let due_display = if overdue {
                 format!("{} {} (late)", icon, due_str).bright_red()
             } else if is_due_soon(due_date) {
-                format!("{} {}", icon, due_str).truecolor(255, 165, 0)
+                format!("{} {}", icon, due_str).bright_yellow()
             } else {
                 format!("{} {}", icon, due_str).dimmed()
             };
@@ -927,11 +935,29 @@ fn format_task_line(
     );
 
     if show_description && !task.description.is_empty() {
-        let indent = " ".repeat(DESCRIPTION_INDENTATION_LENGHT);
-        let wrap_width = term_width().saturating_sub(DESCRIPTION_INDENTATION_LENGHT);
+        // blank line above description
+        println!();
+
+        let indent = " ".repeat(indent_len.max(MIN_DESCRIPTION_INDENT));
+
+        // preferred wrap column is 80 if the terminal is wide enough,
+        // otherwise we stop *just* before the timestamp column so the two
+        // never collide.
+        let wrap_limit = if term_width() >= WRAP_COLUMN {
+            WRAP_COLUMN
+        } else {
+            // leave one spare column so we never touch the date
+            time_col_start.saturating_sub(1)
+        };
+
+        let wrap_width = wrap_limit.saturating_sub(indent_len);
+
         for line in wrap(&task.description, wrap_width) {
             println!("{}{}", indent, line.dimmed());
         }
+
+        // blank line below description
+        println!();
     }
 }
 
@@ -976,7 +1002,7 @@ fn print_task_due_date(task: &Task, pad: usize) {
         let due_display = if overdue {
             format!("{} {} (late)", icon, due_str).bright_red()
         } else if is_due_soon(due_date) {
-            format!("{} {}", icon, due_str).truecolor(255, 165, 0)
+            format!("{} {}", icon, due_str).bright_yellow()
         } else {
             format!("{} {}", icon, due_str).dimmed()
         };
@@ -995,12 +1021,12 @@ fn print_task_status(task: &Task, pad: usize, display: StatusDisplay) {
     let out = match display {
         StatusDisplay::Dot => match task.status {
             Status::Done => dot.bright_green(),
-            Status::Pending => dot.truecolor(255, 165, 0),
+            Status::Pending => dot.bright_yellow(),
             Status::Standby => dot.bright_blue(),
         },
         StatusDisplay::Word => match task.status {
             Status::Done => "done".bright_green(),
-            Status::Pending => "pending".truecolor(255, 165, 0),
+            Status::Pending => "pending".bright_yellow(),
             Status::Standby => "standby".bright_blue(),
         },
     };
@@ -1103,13 +1129,27 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 .saturating_sub(base_cols + time_width + max_due_extra)
                 .max(10);
 
-            // smallest width that still fits the longest *displayed* name
-            let name_width = tasks
-                .iter()
-                .map(|t| truncate_with_dots(&t.name, cap).len())
-                .max()
-                .unwrap_or(10)
-                .max(10);
+            // If we have at least 81 columns, force the timestamp to start at column 81 so every line lines up perfectly.
+            // Otherwise fall back to the previous adaptive logic.
+            let force_time_col = show_descriptions && term > WRAP_COLUMN && base_cols < WRAP_COLUMN;
+
+            let name_width = if force_time_col {
+                WRAP_COLUMN - base_cols
+            } else {
+                tasks
+                    .iter()
+                    .map(|t| truncate_with_dots(&t.name, cap).len())
+                    .max()
+                    .unwrap_or(10)
+                    .max(10)
+            };
+
+            let indent_len = number_width + 2; // “XX. ”   → 2 chars after the digits
+            let time_col_start = if force_time_col {
+                WRAP_COLUMN // fixed 81-column rule
+            } else {
+                base_cols + name_width // dynamic gap, never wraps
+            };
 
             for (idx, task) in tasks.iter().enumerate() {
                 format_task_line_with_number(
@@ -1118,6 +1158,8 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                     task,
                     name_width,
                     time_width,
+                    indent_len,
+                    time_col_start,
                     show_descriptions,
                     StatusDisplay::Dot,
                 );
