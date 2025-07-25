@@ -1,11 +1,12 @@
-Output tarea-demo.webm
+Output tarea-demo.gif
 
 Require tarea
 
 Set Shell "fish"
-Set FontSize 14
+Set FontSize 18
 Set Width 1200
 Set Height 600
+Set Padding 10
 
 # Add tasks
 Type "tarea Implement tarea command -d 'Create the core command to add tasks via CLI interface' --due tomorrow" Sleep 500ms Enter
