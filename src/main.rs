@@ -12,7 +12,6 @@ use terminal_size::{Width, terminal_size};
 use textwrap::wrap;
 use uuid::Uuid;
 
-const DESCRIPTION_INDENTATION_LENGHT: usize = 12;
 const WRAP_COLUMN: usize = 80;
 const MIN_DESCRIPTION_INDENT: usize = 3; // fallback for odd edge-cases
 const DOT_STATUS_CHARACTER: char = '●';
@@ -1129,12 +1128,15 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 .saturating_sub(base_cols + time_width + max_due_extra)
                 .max(10);
 
-            // If we have at least 81 columns, force the timestamp to start at column 81 so every line lines up perfectly.
-            // Otherwise fall back to the previous adaptive logic.
-            let force_time_col = show_descriptions && term > WRAP_COLUMN && base_cols < WRAP_COLUMN;
+            // We can only force the date column if the *widest* line fits
+            let longest_date_len = time_width + max_due_extra;
+            let forced_total = WRAP_COLUMN + 1 + longest_date_len;
 
-            let name_width = if force_time_col {
-                WRAP_COLUMN - base_cols
+            let should_force_time_col =
+                show_descriptions && base_cols < WRAP_COLUMN && term >= forced_total;
+
+            let name_width = if should_force_time_col {
+                WRAP_COLUMN + 2 - base_cols
             } else {
                 tasks
                     .iter()
@@ -1144,11 +1146,11 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                     .max(10)
             };
 
-            let indent_len = number_width + 2; // “XX. ”   → 2 chars after the digits
-            let time_col_start = if force_time_col {
-                WRAP_COLUMN // fixed 81-column rule
+            let indent_len = number_width + 2;
+            let time_col_start = if should_force_time_col {
+                WRAP_COLUMN
             } else {
-                base_cols + name_width // dynamic gap, never wraps
+                base_cols + name_width
             };
 
             for (idx, task) in tasks.iter().enumerate() {
