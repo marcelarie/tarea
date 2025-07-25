@@ -93,7 +93,7 @@ with your installed `tarea` version.
 ### Bugs
 
 - [x] When running --show it uses the id of the --all list not the pending default list
-- [ ] --name does not work with other commands like --done --standby --pending etc
+- [x] --name does not work with other commands like --done --standby --pending etc
 - [ ] Improve is_due_soon, should work differently
 
 ### Todo
@@ -119,6 +119,17 @@ with your installed `tarea` version.
 - [ ] Add help for `--due` with all the natural language specified
 - [x] Print a list of names or a specific task name with `--name <optional_id>`
 - [x] Add docs
+- [ ] Add more options for natural language like:
+  - [ ] days: 1d, 1 day, 2d, 2 days
+  - [ ] weeks: 1w, 2w
+  - [ ] month: 1m, 2mon
+  - [ ] years: 1y, 25y
+  - [ ] Accept decimals
+  - [ ] `next N` - examples: Next monday, Next Week, Next month, Next Mon, Next Fri
+  - [ ] quartes: 1q, 2quarters
+  - [ ] bussines days: 5bd, 5 bussines days
+  - [ ] Verbal relative phrases: `in <n> <unit>` - in 5 days, in 3 hours
+    - [ ] “tonight”, “this morning”, “in the evening”
 
 #### Nice to haves
 
