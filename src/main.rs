@@ -11,6 +11,7 @@ use std::{env, fmt, fs};
 use terminal_size::{Width, terminal_size};
 use textwrap::wrap;
 use uuid::Uuid;
+mod help;
 
 const WRAP_COLUMN: usize = 80;
 const MIN_DESCRIPTION_INDENT: usize = 3; // fallback for odd edge-cases
@@ -1357,18 +1358,21 @@ fn delete_database() -> Result<(), TaskError> {
     Ok(())
 }
 
-fn main() {
+fn main() -> io::Result<()> {
+    help::handle_flag_help()?;
     let command = parse_command();
 
     let manager = match TaskManager::new() {
         Ok(m) => m,
         Err(e) => {
             eprintln!("Failed to initialize task manager: {}", e);
-            return;
+            return Ok(())
         }
     };
 
     if let Err(e) = execute_command(&manager, command) {
         eprintln!("{}", e);
     }
+
+    Ok(())
 }
