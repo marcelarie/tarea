@@ -241,4 +241,28 @@ mapfile -t IDS < <(tarea --ids --short)
 tarea --standby --name
 ```
 
-Enjoy your tidy terminal to-do list!
+## 7. Paging long output
+
+`tarea` pipes to a pager when the list is taller than your terminal.
+
+* **Pager choice** – honours `$PAGER`; defaults to `less -FRX`
+  (`-F` quit if one screen, `-R` keep colours, `-X` don’t clear on exit)
+* **Colour** – forced only when paging is active.
+* **No‑TTY** – skipped automatically when output is redirected.
+
+### Customising
+
+```bash
+export PAGER="bat --paging=always --plain" # colour pager
+export PAGER=cat                           # disable paging
+```
+
+### Env vars
+
+| Var      | Purpose / default      |
+| -------- | ---------------------- |
+| `$PAGER` | Pager command (`less`) |
+| `$LESS`  | Extra flags for `less` |
+
+
+Enjoy your tidy terminal todo list!
