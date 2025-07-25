@@ -1,8 +1,8 @@
 # tarea
 
-`tarea` is a very small command‑line task manager written in Rust. Tasks are stored in a local SQLite database `~/.tarea/tasks.db`.
+`tarea` is a very small command‑line task manager written in Rust.
 
-![tarea-demo](https://github.com/user-attachments/assets/cd86f8a5-1474-45a9-92c2-02d013585a68)
+![tarea-demo](https://github.com/user-attachments/assets/f0dec024-9660-4c24-99c0-c3d832a4a227)
 
 ## Install
 
@@ -13,6 +13,8 @@ cargo install tarea
 Or, from the project directory:
 
 ```bash
+git clone https://github.com/marcelarie/tarea.git
+cd tarea
 cargo install --path .
 ```
 
