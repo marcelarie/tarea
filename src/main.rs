@@ -12,7 +12,7 @@ use terminal_size::{Width, terminal_size};
 use textwrap::wrap;
 use uuid::Uuid;
 
-const DESCRIPTION_INDENTATION_LENGHT: usize = 13;
+const DESCRIPTION_INDENTATION_LENGHT: usize = 12;
 const DOT_STATUS_CHARACTER: char = '●';
 const MAX_TASK_NAME_LENGTH: usize = 120;
 const SHORT_ID_LENGTH: usize = 8;
