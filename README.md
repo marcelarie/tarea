@@ -2,7 +2,7 @@
 
 `tarea` is a very simple command-line task manager.
 
-![tarea-demo](https://github.com/user-attachments/assets/f0dec024-9660-4c24-99c0-c3d832a4a227)
+![tarea-demo](https://github.com/user-attachments/assets/49460c13-6da4-4b21-90c8-1ab1c4f5981c)
 
 ## Install
 
