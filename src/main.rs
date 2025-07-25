@@ -174,7 +174,6 @@ enum TaskCommand {
     DeleteDatabase,
     Edit {
         id_or_index: String,
-        show_all: bool,
         field: EditField,
     },
     List {
@@ -187,11 +186,9 @@ enum TaskCommand {
     },
     Show {
         id: String,
-        show_all: bool,
     },
     ShowName {
         id_or_index: String,
-        show_all: bool,
     },
     UpdateStatus {
         id: String,
@@ -528,6 +525,7 @@ fn cli() -> Command {
             Arg::new("all")
                 .short('a')
                 .long("all")
+                .exclusive(true)
                 .help("Show all tasks regardless of status")
                 .action(clap::ArgAction::SetTrue),
         )
@@ -671,7 +669,6 @@ fn parse_command() -> TaskCommand {
             };
             return TaskCommand::Edit {
                 id_or_index: id_val.clone(),
-                show_all,
                 field: EditField::DueDate(new_due),
             };
         }
@@ -685,7 +682,6 @@ fn parse_command() -> TaskCommand {
             }
             return TaskCommand::Edit {
                 id_or_index: id_val.clone(),
-                show_all,
                 field: EditField::Description(desc),
             };
         }
@@ -714,7 +710,6 @@ fn parse_command() -> TaskCommand {
 
         return TaskCommand::Edit {
             id_or_index: id_val.clone(),
-            show_all,
             field: EditField::Name(new_name),
         };
     }
@@ -722,10 +717,7 @@ fn parse_command() -> TaskCommand {
     if matches.contains_id("name") {
         let id_opt = matches.get_one::<String>("name").cloned();
         return match id_opt {
-            Some(id) => TaskCommand::ShowName {
-                id_or_index: id,
-                show_all: matches.get_flag("all"),
-            },
+            Some(id) => TaskCommand::ShowName { id_or_index: id },
             None => TaskCommand::ListNames {
                 show_all: matches.get_flag("all"),
             },
@@ -735,7 +727,6 @@ fn parse_command() -> TaskCommand {
     if let Some(task_id) = matches.get_one::<String>("show") {
         return TaskCommand::Show {
             id: task_id.clone(),
-            show_all: matches.get_flag("all"),
         };
     }
 
@@ -985,7 +976,7 @@ fn print_task_due_date(task: &Task, pad: usize) {
         let due_display = if overdue {
             format!("{} {} (late)", icon, due_str).bright_red()
         } else if is_due_soon(due_date) {
-            format!("{} {}", icon, due_str).bright_yellow()
+            format!("{} {}", icon, due_str).truecolor(255, 165, 0)
         } else {
             format!("{} {}", icon, due_str).dimmed()
         };
@@ -1004,12 +995,12 @@ fn print_task_status(task: &Task, pad: usize, display: StatusDisplay) {
     let out = match display {
         StatusDisplay::Dot => match task.status {
             Status::Done => dot.bright_green(),
-            Status::Pending => dot.bright_yellow(),
+            Status::Pending => dot.truecolor(255, 165, 0),
             Status::Standby => dot.bright_blue(),
         },
         StatusDisplay::Word => match task.status {
             Status::Done => "done".bright_green(),
-            Status::Pending => "pending".bright_yellow(),
+            Status::Pending => "pending".truecolor(255, 165, 0),
             Status::Standby => "standby".bright_blue(),
         },
     };
@@ -1143,10 +1134,8 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 }
             }
         }
-        TaskCommand::Show { id, show_all } => {
-            // use the same --all / default view the user last displayed
-            let use_all = if show_all { true } else { was_last_list_all() };
-
+        TaskCommand::Show { id } => {
+            let use_all = was_last_list_all();
             let task_opt = resolve_task(manager, &id, use_all)?;
 
             match task_opt {
@@ -1162,12 +1151,8 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 None => println!("{}", format!("Task '{}' not found", id).dimmed()),
             }
         }
-        TaskCommand::ShowName {
-            id_or_index,
-            show_all,
-        } => {
-            let use_all = if show_all { true } else { was_last_list_all() };
-
+        TaskCommand::ShowName { id_or_index } => {
+            let use_all = was_last_list_all();
             let task_opt = resolve_task(manager, &id_or_index, use_all)?;
 
             match task_opt {
@@ -1178,13 +1163,8 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 ),
             }
         }
-        TaskCommand::Edit {
-            id_or_index,
-            show_all,
-            field,
-        } => {
-            let use_all = if show_all { true } else { was_last_list_all() };
-
+        TaskCommand::Edit { id_or_index, field } => {
+            let use_all = was_last_list_all();
             let full_id = match resolve_task(manager, &id_or_index, use_all)? {
                 Some(t) => t.id,
                 None => {
