@@ -123,21 +123,6 @@ with your installed `tarea` version.
       date
 - [x] Print a list of names or a specific task name with `--name <optional_id>`
 - [x] Add docs
-- [ ] Add more options for natural language like:
-  - [x] today, tomorrow
-  - [x] Nh - 1h, 2h
-  - [x] Nm - 1m, 20m, 120m
-  - [x] date: YYYY-MM-DD, YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM:SS
-  - [ ] days: 1d, 1 day, 2d, 2 days
-  - [ ] weeks: 1w, 2w
-  - [ ] month: 1m, 2mon
-  - [ ] years: 1y, 25y
-  - [ ] Accept decimals
-  - [ ] `next N` - examples: Next monday, Next Week, Next month, Next Mon, Next Fri
-  - [ ] quartes: 1q, 2quarters
-  - [ ] bussines days: 5bd, 5 bussines days
-  - [ ] Verbal relative phrases: `in <n> <unit>` - in 5 days, in 3 hours
-    - [ ] “tonight”, “this morning”, “in the evening”
 
 #### Nice to haves
 
@@ -154,32 +139,48 @@ with your installed `tarea` version.
   - [x] Delete tasks
   - [ ] Soft‑delete to an _archive_ table
   - [ ] Permanently purge archived tasks
+- [ ] **Bulk operations**
+  - [ ] Mark several tasks done at once
+  - [ ] Delete multiple tasks
 - [ ] **Tagging / categories**
   - [ ] Assign multiple tags per task
   - [ ] Filter or list by tag
-- [ ] **Search / fuzzy‑search tasks**
 - [ ] **Sort options**
   - [ ] By creation date
   - [ ] By due date
   - [ ] By name
-- [ ] **Recurring tasks**
-  - [ ] Daily / weekly / monthly cadence
 - [ ] **Import / export**
   - [ ] JSON
   - [ ] CSV / TSV
   - [ ] Markdown checklist
-- [ ] **Bulk operations**
-  - [ ] Mark several tasks done at once
-  - [ ] Delete multiple tasks
+- [ ] **Recurring tasks**
+  - [ ] Daily / weekly / monthly cadence
+- [ ] **Search / fuzzy‑search tasks**
 
 ### UX / CLI niceties
 
-- [ ] Shell completions for Bash/Zsh/Fish
+- [x] Shell completions for Bash/Zsh/Fish
 - [ ] Config file (`~/.tarea.toml`) for defaults (colors, DB path, truncation length)
 - [ ] Natural‑language due‑date parsing (“in 3 days”, “next Friday”)
+  - [x] today, tomorrow
+  - [x] Nh - 1h, 2h
+  - [x] Nm - 1m, 20m, 120m
+  - [x] date: YYYY-MM-DD, YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM:SS
+  - [ ] days: 1d, 1 day, 2d, 2 days
+  - [ ] weeks: 1w, 2w
+  - [ ] month: 1m, 2mon
+  - [ ] years: 1y, 25y
+  - [ ] Accept decimals
+  - [ ] `next N` - examples: Next monday, Next Week, Next month, Next Mon, Next Fri
+  - [ ] quartes: 1q, 2quarters
+  - [ ] bussines days: 5bd, 5 bussines days
+  - [ ] Verbal relative phrases: `in <n> <unit>` - in 5 days, in 3 hours
+    - [ ] “tonight”, “this morning”, “in the evening”
 - [ ] Auto‑paginate long task lists (`less`‑style)
+
+- [ ] Clipboard copy of task ID / content (this is really easy by pipeing it to
+      wl-copy or others)
 - [ ] Interactive mode / simple TUI (via `crossterm` or `ratatui`)
-- [ ] Clipboard copy of task ID / content
 
 ### Automation & notifications
 
