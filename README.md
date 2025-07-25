@@ -20,7 +20,7 @@ cargo install --path .
 
 ## Documentation
 
-Check the [docs.md](./docs.md) for a more detiled documentation.
+Check the [docs.md](/docs.md) for a more detiled documentation.
 
 ## Build
 
@@ -55,7 +55,7 @@ etc.
 # Bash, system‑wide
 sudo tarea --completions bash >/etc/bash_completion.d/tarea
 
-# Zsh (user scope)
+# Zsh (user scope)
 mkdir -p ~/.zsh/completions
 tarea --completions zsh >~/.zsh/completions/_tarea
 
@@ -93,8 +93,7 @@ with your installed `tarea` version.
 ### Bugs
 
 - [x] When running --show it uses the id of the --all list not the pending default list
-- [ ] --name does not work with other commands like --done --standby --pending
-      etc
+- [ ] --name does not work with other commands like --done --standby --pending etc
 - [ ] Improve is_due_soon, should work differently
 
 ### Todo

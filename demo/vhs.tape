@@ -3,9 +3,9 @@ Output tarea-demo.gif
 Require tarea
 
 Set Shell "fish"
-Set FontSize 18
+Set FontSize 17
 Set Width 1200
-Set Height 600
+Set Height 700
 Set Padding 10
 
 # Add tasks
