@@ -1,8 +1,5 @@
 # tarea — Documentation
 
-`tarea` is a single-binary CLI for keeping lightweight to-dos in an SQLite
-database under `~/.tarea/tasks.db`. 
-
 ## 0. Building
 
 ```bash
@@ -232,7 +229,7 @@ Remove the whole directory or run `--delete-database` to start fresh.
 ```bash
 # Add, then mark done
 tarea "Read Rust book" -d "Chapters 8–10" --due 3d
-tarea --done 1            # same as --done <short-uuid>
+tarea --done 1            # same as --done <short-uuid> or <uuid>
 
 # Snooze a task until next week
 tarea --edit 3 --due "2025-08-04"

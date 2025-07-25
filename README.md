@@ -1,6 +1,6 @@
 # tarea
 
-`tarea` is a very small command‑line task manager written in Rust.
+`tarea` is a very simple command-line task manager.
 
 ![tarea-demo](https://github.com/user-attachments/assets/f0dec024-9660-4c24-99c0-c3d832a4a227)
 
@@ -28,7 +28,7 @@ Check the [docs.md](./docs.md) for a more detiled documentation.
 git clone https://github.com/marcelarie/tarea.git
 cd tarea
 cargo build --release
-````
+```
 
 ## Usage
 
@@ -43,7 +43,7 @@ tarea Finish report -d "Complete quarterly sales analysis report" --due tomorrow
 tarea --delete-database
 ```
 
-## Shell completions  *(Bash · Zsh · Fish)*
+## Shell completions _(Bash · Zsh · Fish)_
 
 `tarea` can generate ready‑to‑use completion scripts and even keeps them
 **ID** aware, so you can tab‑complete flags like `--show`, `--edit`, `--done`,
@@ -66,7 +66,7 @@ tarea --completions fish >~/.config/fish/completions/tarea.fish
 
 Restart or `source` the file and ↹‑completion is ready.
 
-### Always up‑to‑date (auto‑load in your *rc*)
+### Always up‑to‑date (auto‑load in your _rc_)
 
 ```bash
 # ~/.bashrc
@@ -86,14 +86,15 @@ type -q tarea; and tarea --completions fish | source
 That's it, every new shell session re‑generates completions, so they stay in sync
 with your installed `tarea` version.
 
-
 ### Display
 
-* Each task shows an 8‑character UUID prefix, status, name, and the creation timestamp.
+- Each task shows an 8‑character UUID prefix, status, name, and the creation timestamp.
 
 ### Bugs
 
 - [x] When running --show it uses the id of the --all list not the pending default list
+- [ ] --name does not work with other commands like --done --standby --pending
+      etc
 - [ ] Improve is_due_soon, should work differently
 
 ### Todo
@@ -121,61 +122,61 @@ with your installed `tarea` version.
 - [x] Add docs
 
 #### Nice to haves
+
 - [ ] Encrypt task db
 - [ ] Backup db remotly
-- [ ] Sync DB with remote machine 
+- [ ] Sync DB with remote machine
 
 ### Core features
 
-* [x] **Edit a task**
-  * [x] Change name or description
-  * [x] Update due date
-* [ ] **Delete / archive a task**
-  * [ ] Soft‑delete to an *archive* table
-  * [ ] Permanently purge archived tasks
-* [ ] **Tagging / categories**
-  * [ ] Assign multiple tags per task
-  * [ ] Filter or list by tag
-* [ ] **Search / fuzzy‑search tasks**
-* [ ] **Sort options**
-  * [ ] By creation date
-  * [ ] By due date
-  * [ ] By name
-* [ ] **Recurring tasks**
-  * [ ] Daily / weekly / monthly cadence
-* [ ] **Import / export**
-  * [ ] JSON
-  * [ ] CSV / TSV
-  * [ ] Markdown checklist
-* [ ] **Bulk operations**
-  * [ ] Mark several tasks done at once
-  * [ ] Delete multiple tasks
+- [x] **Edit a task**
+  - [x] Change name or description
+  - [x] Update due date
+- [ ] **Delete / archive a task**
+  - [ ] Soft‑delete to an _archive_ table
+  - [ ] Permanently purge archived tasks
+- [ ] **Tagging / categories**
+  - [ ] Assign multiple tags per task
+  - [ ] Filter or list by tag
+- [ ] **Search / fuzzy‑search tasks**
+- [ ] **Sort options**
+  - [ ] By creation date
+  - [ ] By due date
+  - [ ] By name
+- [ ] **Recurring tasks**
+  - [ ] Daily / weekly / monthly cadence
+- [ ] **Import / export**
+  - [ ] JSON
+  - [ ] CSV / TSV
+  - [ ] Markdown checklist
+- [ ] **Bulk operations**
+  - [ ] Mark several tasks done at once
+  - [ ] Delete multiple tasks
 
 ### UX / CLI niceties
 
-* [ ] Shell completions for Bash/Zsh/Fish
-* [ ] Config file (`~/.tarea.toml`) for defaults (colors, DB path, truncation length)
-* [ ] Natural‑language due‑date parsing (“in 3 days”, “next Friday”)
-* [ ] Auto‑paginate long task lists (`less`‑style)
-* [ ] Interactive mode / simple TUI (via `crossterm` or `ratatui`)
-* [ ] Clipboard copy of task ID / content
+- [ ] Shell completions for Bash/Zsh/Fish
+- [ ] Config file (`~/.tarea.toml`) for defaults (colors, DB path, truncation length)
+- [ ] Natural‑language due‑date parsing (“in 3 days”, “next Friday”)
+- [ ] Auto‑paginate long task lists (`less`‑style)
+- [ ] Interactive mode / simple TUI (via `crossterm` or `ratatui`)
+- [ ] Clipboard copy of task ID / content
 
 ### Automation & notifications
 
-* [ ] Local notifications when a task is due
-* [ ] Optional e‑mail or webhook reminders
-* [ ] Cron helper to print today’s pending tasks at login
+- [ ] Local notifications when a task is due
+- [ ] Optional e‑mail or webhook reminders
+- [ ] Cron helper to print today’s pending tasks at login
 
 ### Data & statistics
 
-* [ ] Weekly productivity summary (tasks completed per day)
-* [ ] Burn‑down chart for tasks with due dates
-* [ ] “Streak” counter for consecutive days with at least one completion
+- [ ] Weekly productivity summary (tasks completed per day)
+- [ ] Burn‑down chart for tasks with due dates
+- [ ] “Streak” counter for consecutive days with at least one completion
 
 ### Security & reliability
 
-* [ ] Multi‑profile support (separate DB per project)
-* [ ] End‑to‑end encrypted remote sync (e.g. with age + rclone)
-* [ ] Automatic versioned backups with retention policy
-* [ ] Integrity check / vacuum command
-
+- [ ] Multi‑profile support (separate DB per project)
+- [ ] End‑to‑end encrypted remote sync (e.g. with age + rclone)
+- [ ] Automatic versioned backups with retention policy
+- [ ] Integrity check / vacuum command
