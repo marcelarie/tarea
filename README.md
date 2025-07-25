@@ -120,6 +120,10 @@ with your installed `tarea` version.
 - [x] Print a list of names or a specific task name with `--name <optional_id>`
 - [x] Add docs
 - [ ] Add more options for natural language like:
+  - [x] today, tomorrow
+  - [x] Nh - 1h, 2h
+  - [x] Nm - 1m, 20m, 120m
+  - [x] date: YYYY-MM-DD, YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM:SS
   - [ ] days: 1d, 1 day, 2d, 2 days
   - [ ] weeks: 1w, 2w
   - [ ] month: 1m, 2mon
