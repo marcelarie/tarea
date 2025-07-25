@@ -29,7 +29,7 @@ fi
 _tarea() {
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
     case "$prev" in
-        --show|--edit|--done|--pending|--standby)
+        --show|--edit|--done|--pending|--standby|--delete)
             COMPREPLY=( $(compgen -W "$(tarea --ids --short 2>/dev/null)" \
                           -- "${COMP_WORDS[COMP_CWORD]}") )
             return
@@ -201,6 +201,10 @@ enum TaskCommand {
     Ids {
         short_only: bool,
     },
+    Delete {
+        id_or_index: String,
+        status: Option<Status>,
+    },
 }
 
 #[derive(Debug)]
@@ -287,6 +291,10 @@ impl TaskManager {
                     .join(", ")
             ))),
         }
+    }
+
+    fn delete_task_by_id(&self, id: &str) -> Result<bool, TaskError> {
+        Ok(self.conn.execute("DELETE FROM tasks WHERE id = ?1", [id])? > 0)
     }
 
     fn update_task_status(&self, short_id: &str, new_status: Status) -> Result<bool, TaskError> {
@@ -545,6 +553,13 @@ fn cli() -> Command {
                 .value_name("SHELL"),
         )
         .arg(
+            Arg::new("delete")
+                .long("delete")
+                .help("Delete a task by ID or list index")
+                .value_name("TASK")
+                .num_args(1),
+        )
+        .arg(
             Arg::new("delete-database")
                 .long("delete-database")
                 .help("Delete the task database")
@@ -740,6 +755,14 @@ fn parse_command() -> TaskCommand {
     if let Some(task_id) = matches.get_one::<String>("show") {
         return TaskCommand::Show {
             id: task_id.clone(),
+        };
+    }
+
+    if let Some(task_id) = matches.get_one::<String>("delete") {
+        let status = status_flag(&matches).map(|(s, _)| s);
+        return TaskCommand::Delete {
+            id_or_index: task_id.clone(),
+            status,
         };
     }
 
@@ -1075,6 +1098,55 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 _ => unreachable!(),
             };
         }
+        TaskCommand::Delete {
+            id_or_index,
+            status,
+        } => {
+            let use_all = was_last_list_all();
+            let task_list = manager.list_tasks(status.clone(), use_all)?;
+
+            let task_opt = if is_number(&id_or_index) {
+                let idx: usize = id_or_index.parse().unwrap_or(0);
+                task_list.into_iter().nth(idx.saturating_sub(1))
+            } else {
+                task_list
+                    .into_iter()
+                    .find(|t| t.id.starts_with(&id_or_index))
+            };
+
+            match task_opt {
+                Some(task) => {
+                    let confirmed = {
+                        print!("Delete task '{}'? (y/N): ", task.name);
+                        io::stdout().flush()?;
+                        let mut input = String::new();
+                        io::stdin().read_line(&mut input)?;
+                        matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
+                    };
+
+                    if confirmed {
+                        if manager.delete_task_by_id(&task.id)? {
+                            println!("{}", "Task deleted successfully".bright_green());
+                        } else {
+                            println!("{}", "Task not found".bright_red());
+                        }
+                    } else {
+                        println!("{}", "Task deletion cancelled".bright_yellow());
+                    }
+                }
+                None => println!(
+                    "{}",
+                    format!(
+                        "Task '{}' not found{}",
+                        id_or_index,
+                        status
+                            .map(|s| format!(" in {} tasks", s))
+                            .unwrap_or_default()
+                    )
+                    .bright_red()
+                ),
+            }
+        }
         TaskCommand::List {
             status,
             show_all,
@@ -1257,7 +1329,6 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 println!("{}", "nothing changed".bright_yellow());
             }
         }
-
         TaskCommand::UpdateStatus { id, status } => {
             let target_id = match resolve_task(manager, &id, was_last_list_all())? {
                 Some(t) => t.id,
@@ -1366,7 +1437,7 @@ fn main() -> io::Result<()> {
         Ok(m) => m,
         Err(e) => {
             eprintln!("Failed to initialize task manager: {}", e);
-            return Ok(())
+            return Ok(());
         }
     };
 

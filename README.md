@@ -117,6 +117,10 @@ with your installed `tarea` version.
 - [ ] Filter by due date with `--due` and do a reverse conversion from natural
       langauge time to db time
 - [ ] Add help for `--due` with all the natural language specified
+- [ ] Yes flag to autoconfirm commands like --delete-database or --delete
+- [ ] Add a completed task date for when a task is passed to done, it should be
+      used in the --done list to show the finished task date apart from the creation
+      date
 - [x] Print a list of names or a specific task name with `--name <optional_id>`
 - [x] Add docs
 - [ ] Add more options for natural language like:
@@ -147,6 +151,7 @@ with your installed `tarea` version.
   - [x] Change name or description
   - [x] Update due date
 - [ ] **Delete / archive a task**
+  - [x] Delete tasks
   - [ ] Soft‑delete to an _archive_ table
   - [ ] Permanently purge archived tasks
 - [ ] **Tagging / categories**
