@@ -9,7 +9,7 @@ Set Height 600
 Set Padding 10
 
 # Add tasks
-Type "tarea Implement tarea command -d 'Create the core command to add tasks via CLI interface' --due tomorrow" Sleep 500ms Enter
+Type "tarea Implement tarea command -d 'Create core command to add tasks via CLI interface' --due tomorrow" Sleep 500ms Enter
 Type "tarea Parse task metadata flags -d 'Support --desc, --due, and other flags for task creation' --due 24h" Sleep 500ms Enter
 Type "clear" Sleep 200ms Enter
 Sleep 300ms
