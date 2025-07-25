@@ -11,7 +11,10 @@ use std::{env, fmt, fs};
 use terminal_size::{Width, terminal_size};
 use textwrap::wrap;
 use uuid::Uuid;
+
+use crate::paging::{PagerConfig, init as pager_init};
 mod help;
+mod paging;
 
 const WRAP_COLUMN: usize = 80;
 const MIN_DESCRIPTION_INDENT: usize = 3; // fallback for odd edge-cases
@@ -1429,8 +1432,32 @@ fn delete_database() -> Result<(), TaskError> {
     Ok(())
 }
 
+
+fn estimated_lines(command: &TaskCommand, manager: &TaskManager) -> usize {
+    match command {
+        TaskCommand::List {
+            show_descriptions,
+            show_all,
+            status,
+        } => {
+            // A second query is cheap; if you prefer you can refactor to reuse it
+            if let Ok(tasks) = manager.list_tasks(status.clone(), *show_all) {
+                if *show_descriptions {
+                    tasks.len() * 4 // 1 title + 2 blanks + 1 wrapped line (avg)
+                } else {
+                    tasks.len() // exactly 1 line per task
+                }
+            } else {
+                0
+            }
+        }
+        _ => 0, // other commands never exceed one screen
+    }
+}
+
 fn main() -> io::Result<()> {
     help::handle_flag_help()?;
+
     let command = parse_command();
 
     let manager = match TaskManager::new() {
@@ -1440,6 +1467,13 @@ fn main() -> io::Result<()> {
             return Ok(());
         }
     };
+
+    let line_estimate = estimated_lines(&command, &manager);
+
+    pager_init(PagerConfig {
+        lines: line_estimate,
+        needs_color: true,
+    })?;
 
     if let Err(e) = execute_command(&manager, command) {
         eprintln!("{}", e);

@@ -84,7 +84,7 @@
   - [ ] bussines days: 5bd, 5 bussines days
   - [ ] Verbal relative phrases: `in <n> <unit>` - in 5 days, in 3 hours
     - [ ] “tonight”, “this morning”, “in the evening”
-- [ ] Auto‑paginate long task lists (`less`‑style)
+- [x] Auto‑paginate long task lists (`less`‑style)
 
 - [ ] Clipboard copy of task ID / content (this is really easy by pipeing it to
       wl-copy or others)
