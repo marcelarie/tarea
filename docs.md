@@ -115,26 +115,44 @@ Task 3c7a4b93 marked as standby
 
 ### Editing tasks
 
-#### Rename
+You can edit a single field inline name, description or due date with `--edit`
+and the appropriate flag:
 
 ```bash
-$ tarea --edit 2 "Pay rent"
+tarea --edit 2 "Pay rent"                        # rename
+tarea --edit 8f2b6c1e -d "Include June numbers"  # description
+tarea --edit 2 --due "2025-08-01 18:00"          # due date
+```
+
+If you invoke `--edit` with no other flags or text, `tarea` opens the task in
+your `$VISUAL` or `$EDITOR`, it will search for the env vars in that order:
+
+```bash
+tarea --edit 2 # or <id>
+# your editor opens a TOML file
 task updated
 ```
 
-#### Edit description
+The file contains the current `name`, `description` and `due` fields in TOML
+format. Edit any of the values (multi‑line descriptions are supported), remove
+or empty the `due` field to clear it, then save and quit. `tarea` will read back
+the file, validate the date format and apply any changes.
 
-```bash
-$ tarea --edit 8f2b6c1e -d "Include June numbers"
-task updated
+Example:
+
+```toml
+# Lines beginning with '#' are ignored.
+name = "Buy milk"
+description = """
+2 litres of oat milk,
+unsweetened
+"""
+due = "2025-08-01 23:59"
 ```
 
-#### Change due date
+If the TOML is invalid or the due date cannot be parsed, the changes are not
+applied and an error is printed.
 
-```bash
-$ tarea --edit 2 --due "2025-08-01 18:00"
-task updated
-```
 
 ### IDs & short IDs
 
