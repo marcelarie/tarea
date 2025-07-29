@@ -43,5 +43,6 @@ jobs:
           git push https://${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git ${{ github.ref_name }}
 
       - name: Print changelog
-        run: cat CHANGELOG.md
+        run: |
+          git --no-pager diff --unified=0 -- CHANGELOG.md
 
