@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - Add automatic pagination for long task lists
 - *(editor)* Add external editor support for task editing
 - *(ci)* Include commit hashes in changelog commit message
+- *(ci)* Write changelog diff to GitHub Actions step summary
 
 ### Bug Fixes
 
