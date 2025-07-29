@@ -80,16 +80,36 @@ _tarea() {
 //     '--standby[mark standby]:task ID:_tarea_ids' && return
 // }
 // "#;
-// const DYNAMIC_COMPLETE_FISH: &str = r#"
-// function __tarea_ids
-//     tarea --ids --short ^/dev/null
-// end
-//
-// # Attach dynamic ID completion to each flag that takes a TASK_ID
-// for opt in show edit done pending standby
-//     complete -c tarea -n "__fish_seen_argument -l $opt" -a "(__tarea_ids)"
-// end
-// "#;
+const DYNAMIC_COMPLETE_FISH: &str = r#"
+function __tarea_status_complete
+    set cmd (commandline -opc)
+    set filter ""
+    for arg in $cmd
+        switch $arg
+            case --done
+                set filter "--filter=standby,pending"
+            case --pending
+                set filter "--filter=done,standby"
+            case --standby
+                set filter "--filter=done,pending"
+            case --show --edit --delete
+                set filter "--filter=done,pending,standby"
+        end
+    end
+    if test -n "$filter"
+        tarea --ids --short $filter
+    else
+
+    end
+end
+
+complete -r -f -c tarea -l done -a '(__tarea_status_complete)' -d 'Mark tasks as done'
+complete -r -f -c tarea -l pending -a '(__tarea_status_complete)' -d 'Mark tasks as pending'
+complete -r -f -c tarea -l standby -a '(__tarea_status_complete)' -d 'Mark tasks as standby'
+complete -r -f -c tarea -l show -a '(__tarea_status_complete)' -d 'Show specific task by ID'
+complete -r -f -c tarea -l edit -a '(__tarea_status_complete)' -d 'Edit task'
+complete -r -f -c tarea -l delete -a '(__tarea_status_complete)' -d 'Delete a task by ID'
+"#;
 
 #[derive(Debug)]
 enum TaskError {
@@ -1212,7 +1232,7 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
             match shell.as_str() {
                 "bash" => {
                     generate(Bash, &mut cmd, "tarea", &mut out);
-                    writeln!(out, "{DYNAMIC_COMPLETE_BASH}").unwrap();
+                    writeln!(out, "{}", DYNAMIC_COMPLETE_BASH)?;
                 }
                 "zsh" => {
                     generate(Zsh, &mut cmd, "tarea", &mut io::stdout());
@@ -1220,7 +1240,7 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 }
                 "fish" => {
                     generate(Fish, &mut cmd, "tarea", &mut io::stdout());
-                    // print!("{DYNAMIC_COMPLETE_FISH}"); // FIX fish ids completions
+                    writeln!(out, "{}", DYNAMIC_COMPLETE_FISH)?;
                 }
                 "powershell" => generate(PowerShell, &mut cmd, "tarea", &mut io::stdout()),
                 "elvish" => generate(Elvish, &mut cmd, "tarea", &mut io::stdout()),
