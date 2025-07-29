@@ -43,6 +43,10 @@
 - [x] **Edit a task**
   - [x] Change name or description
   - [x] Update due date
+  - [x] Fallback to external editor if no --name --desc or --due param is passed
+    - [x] Use $VISUAL/$EDITOR/vi as references on what to use, in that order
+    - [x] Use a TOML file for getting the input
+    
 - [ ] **Delete / archive a task**
   - [x] Delete tasks
   - [ ] Soft‑delete to an _archive_ table
