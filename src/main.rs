@@ -32,16 +32,32 @@ fi
 
 _tarea() {
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
+    local filter=""
+
     case "$prev" in
-        --show|--edit|--done|--pending|--standby|--delete)
-            COMPREPLY=( $(compgen -W "$(tarea --ids --short 2>/dev/null)" \
-                          -- "${COMP_WORDS[COMP_CWORD]}") )
+        --done)
+            filter="--filter=standby,pending"
+            ;;
+        --pending)
+            filter="--filter=done,standby"
+            ;;
+        --standby)
+            filter="--filter=done,pending"
+            ;;
+        --show|--edit|--delete)
+            # No filter, allow matching any task
+            ;;
+        *)
+            _tarea_clap "$@"
             return
             ;;
     esac
-    _tarea_clap "$@"
+
+    COMPREPLY=( $(compgen -W "$(tarea --ids --short $filter 2>/dev/null)" \
+                      -- "${COMP_WORDS[COMP_CWORD]}") )
 }
 "#;
+
 // const DYNAMIC_COMPLETE_ZSH: &str = r#"
 // # Tiny helper that prints all short IDs
 // _tarea_ids() { tarea --ids --short 2>/dev/null }
@@ -138,6 +154,41 @@ impl FromStr for Status {
     }
 }
 
+/// A first-class filter for status-based queries.
+enum StatusFilter {
+    All,
+    AnyOf(Vec<Status>),
+    PendingOnly,
+}
+
+impl StatusFilter {
+    fn to_sql(&self) -> (String, Vec<String>) {
+        match self {
+            StatusFilter::All => (String::new(), vec![]),
+
+            StatusFilter::PendingOnly => (
+                "WHERE status = ?1".into(),
+                vec![Status::Pending.to_string()],
+            ),
+
+            StatusFilter::AnyOf(status) if status.is_empty() => {
+                // fallback to pending-only if empty
+                StatusFilter::PendingOnly.to_sql()
+            }
+
+            StatusFilter::AnyOf(status) => {
+                let placeholders = std::iter::repeat("?")
+                    .take(status.len())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let clause = format!("WHERE status IN ({})", placeholders);
+                let params = status.iter().map(|status| status.to_string()).collect();
+                (clause, params)
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Task {
     id: String,
@@ -204,6 +255,7 @@ enum TaskCommand {
     },
     Ids {
         short_only: bool,
+        filter: Vec<Status>,
     },
     Delete {
         id_or_index: String,
@@ -223,6 +275,18 @@ enum EditField {
 
 struct TaskManager {
     conn: Connection,
+}
+
+// TODO: Refactor code so this function is not needed
+fn status_filter_from_params(status: Option<Status>, show_all: bool) -> StatusFilter {
+    if show_all {
+        StatusFilter::All
+    } else {
+        match status {
+            Some(s) => StatusFilter::AnyOf(vec![s]),
+            None => StatusFilter::PendingOnly,
+        }
+    }
 }
 
 impl TaskManager {
@@ -251,24 +315,28 @@ impl TaskManager {
         Ok(())
     }
 
-    fn list_tasks(&self, status: Option<Status>, show_all: bool) -> Result<Vec<Task>, TaskError> {
-        let (query, params) = build_task_query(status.as_ref(), show_all);
-        let mut stmt = self.conn.prepare(query)?;
+    fn list_tasks(&self, filter: StatusFilter) -> Result<Vec<Task>, TaskError> {
+        let (sql, status_strings) = build_task_query(filter);
+        let mut statement = self.conn.prepare(&sql)?;
 
-        let mut tasks = Vec::new();
-        let row_mapper = |row: &rusqlite::Row| self.row_to_task(row);
+        let map_row_to_task = |row: &rusqlite::Row| self.row_to_task(row);
 
-        let task_iter = if let Some(status_param) = params {
-            stmt.query_map([status_param], row_mapper)?
+        let results = if status_strings.is_empty() {
+            statement.query_map([], map_row_to_task)?
         } else {
-            stmt.query_map([], row_mapper)?
+            let bindings: Vec<&dyn rusqlite::ToSql> =
+                status_strings.iter().map(|status| status as _).collect();
+
+            statement.query_map(&*bindings, map_row_to_task)?
         };
 
-        for task_result in task_iter {
-            tasks.push(task_result?);
+        let mut task_list = Vec::new();
+
+        for result in results {
+            task_list.push(result?);
         }
 
-        Ok(tasks)
+        Ok(task_list)
     }
 
     fn find_task_by_id(&self, short_id: &str) -> Result<Option<Task>, TaskError> {
@@ -485,15 +553,18 @@ fn resolve_task(
 ) -> Result<Option<Task>, TaskError> {
     if is_number(reference) {
         let idx: usize = reference.parse().unwrap_or(0);
+        let filter = if show_all {
+            StatusFilter::All
+        } else {
+            StatusFilter::PendingOnly
+        };
         if let Some(t) = manager
-            .list_tasks(None, show_all)?
+            .list_tasks(filter)?
             .into_iter()
             .nth(idx.saturating_sub(1))
         {
             return Ok(Some(t));
         }
-        // If there is no task with that index we fall through and
-        // treat the string as an ID prefix (numeric UUIDs such as “97944653”).
     }
     manager.find_task_by_id(reference)
 }
@@ -521,24 +592,17 @@ fn format_task_line_with_number(
     );
 }
 
-fn build_task_query(
-    status_filter: Option<&Status>,
-    show_all: bool,
-) -> (&'static str, Option<String>) {
-    match (show_all, status_filter) {
-        (true, _) => (
-            "SELECT id, date, name, description, status, due_date FROM tasks ORDER BY date DESC",
-            None,
-        ),
-        (false, Some(status)) => (
-            "SELECT id, date, name, description, status, due_date FROM tasks WHERE status = ?1 ORDER BY date DESC",
-            Some(status.to_string()),
-        ),
-        (false, None) => (
-            "SELECT id, date, name, description, status, due_date FROM tasks WHERE status = 'pending' ORDER BY date DESC",
-            None,
-        ),
+fn build_task_query(filter: StatusFilter) -> (String, Vec<String>) {
+    let mut sql = String::from("SELECT id, date, name, description, status, due_date FROM tasks");
+
+    let (where_clause, params) = filter.to_sql();
+    if !where_clause.is_empty() {
+        sql.push(' ');
+        sql.push_str(&where_clause);
     }
+
+    sql.push_str(" ORDER BY date DESC");
+    (sql, params)
 }
 
 fn cli() -> Command {
@@ -610,6 +674,13 @@ fn cli() -> Command {
                 .value_name("EDIT"),
         )
         .arg(
+            Arg::new("filter")
+                .long("filter")
+                .num_args(1)
+                .value_name("STATUS[,STATUS...]")
+                .help("Only show tasks with any of the given statuses (used with --ids)"),
+        )
+        .arg(
             Arg::new("pending")
                 .long("pending")
                 .help("Mark task as pending (if TASK_ID given) or list pending tasks")
@@ -667,13 +738,25 @@ fn parse_command() -> TaskCommand {
         return TaskCommand::DeleteDatabase;
     }
 
-    if matches.get_flag("ids") {
+    if matches.get_flag("ids") && !matches.contains_id("task") {
+        let short = matches.get_flag("short");
+        let filter = matches
+            .get_one::<String>("filter")
+            .map(|status| {
+                status
+                    .split(',')
+                    .filter_map(|st| Status::from_str(st.trim()).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+
         return TaskCommand::Ids {
-            short_only: matches.get_flag("short"),
+            short_only: short,
+            filter,
         };
     }
 
-    if matches.contains_id("name") {
+    if matches.contains_id("name") && !matches.contains_id("task") {
         let id_opt = matches.get_one::<String>("name").cloned();
         let status = status_flag(&matches).map(|(s, _)| s);
 
@@ -719,7 +802,11 @@ fn parse_command() -> TaskCommand {
         }
         // --due  (date parsing reused)
         if let Some(due_vals) = matches.get_many::<String>("due-date") {
-            let raw = due_vals.map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
+            let raw = due_vals
+                .map(|status| status.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+
             let new_due = match parse_due_date(&raw) {
                 Ok(d) => d,
                 Err(e) => {
@@ -735,7 +822,11 @@ fn parse_command() -> TaskCommand {
 
         // -d / --desc
         if let Some(desc_vals) = matches.get_many::<String>("description") {
-            let desc = desc_vals.map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
+            let desc = desc_vals
+                .map(|status| status.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+
             if desc.is_empty() {
                 eprintln!("No new description supplied");
                 std::process::exit(1);
@@ -750,7 +841,11 @@ fn parse_command() -> TaskCommand {
         let new_name = if let Some(first) = matches.get_one::<String>("name") {
             let mut name_clone = first.clone();
             if let Some(rest) = matches.get_many::<String>("task") {
-                let tail = rest.map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
+                let tail = rest
+                    .map(|status| status.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
                 if !tail.is_empty() {
                     name_clone.push(' ');
                     name_clone.push_str(&tail);
@@ -760,8 +855,12 @@ fn parse_command() -> TaskCommand {
         } else {
             matches
                 .get_many::<String>("task")
-                .map(|vals| vals.map(|s| s.as_str()).collect::<Vec<_>>().join(" "))
-                .filter(|s| !s.is_empty())
+                .map(|vals| {
+                    vals.map(|status| status.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .filter(|status| !status.is_empty())
                 .unwrap_or_else(|| {
                     eprintln!("No new name supplied");
                     std::process::exit(1);
@@ -796,12 +895,16 @@ fn parse_command() -> TaskCommand {
 
     let task_name = matches
         .get_many::<String>("task")
-        .map(|vals| vals.map(|s| s.as_str()).collect::<Vec<_>>().join(" "))
-        .filter(|s| !s.is_empty());
+        .map(|vals| {
+            vals.map(|status| status.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .filter(|status| !status.is_empty());
 
     if let Some(name) = task_name {
         let description = if let Some(desc_vals) = matches.get_many::<String>("description") {
-            let desc_text = desc_vals.map(|s| s.as_str()).collect::<Vec<_>>();
+            let desc_text = desc_vals.map(|status| status.as_str()).collect::<Vec<_>>();
             if desc_text.is_empty() {
                 None
             } else {
@@ -812,7 +915,11 @@ fn parse_command() -> TaskCommand {
         };
 
         let due_date = if let Some(date_vals) = matches.get_many::<String>("due-date") {
-            let date_str = date_vals.map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
+            let date_str = date_vals
+                .map(|status| status.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+
             match parse_due_date(&date_str) {
                 Ok(dt) => Some(dt),
                 Err(e) => {
@@ -1125,7 +1232,13 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
             status,
         } => {
             let use_all = was_last_list_all();
-            let task_list = manager.list_tasks(status.clone(), use_all)?;
+            let filter = match (status.clone(), use_all) {
+                (Some(_s), _) if use_all => StatusFilter::All,
+                (Some(s), _) => StatusFilter::AnyOf(vec![s]),
+                (None, true) => StatusFilter::All,
+                (None, false) => StatusFilter::PendingOnly,
+            };
+            let task_list = manager.list_tasks(filter)?;
 
             let task_opt = if is_number(&id_or_index) {
                 let idx: usize = id_or_index.parse().unwrap_or(0);
@@ -1162,7 +1275,7 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                         "Task '{}' not found{}",
                         id_or_index,
                         status
-                            .map(|s| format!(" in {} tasks", s))
+                            .map(|status| format!(" in {} tasks", status))
                             .unwrap_or_default()
                     )
                     .bright_red()
@@ -1174,7 +1287,8 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
             show_all,
             show_descriptions,
         } => {
-            let tasks = manager.list_tasks(status.clone(), show_all)?;
+            let filter = status_filter_from_params(status.clone(), show_all);
+            let tasks = manager.list_tasks(filter)?;
 
             if tasks.is_empty() {
                 let message = match (show_all, status) {
@@ -1271,7 +1385,8 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
             save_last_list_all(show_all)?;
         }
         TaskCommand::ListNames { show_all, status } => {
-            let tasks = manager.list_tasks(status, show_all)?;
+            let filter = status_filter_from_params(status, show_all);
+            let tasks = manager.list_tasks(filter)?;
             if tasks.is_empty() {
                 println!("{}", "no tasks found".dimmed());
             } else {
@@ -1302,7 +1417,8 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
             status,
         } => {
             let use_all = was_last_list_all();
-            let task_list = manager.list_tasks(status.clone(), use_all)?;
+            let filter = status_filter_from_params(status.clone(), use_all);
+            let task_list = manager.list_tasks(filter)?;
             let task_opt = if is_number(&id_or_index) {
                 let idx: usize = id_or_index.parse().unwrap_or(0);
                 task_list.into_iter().nth(idx.saturating_sub(1))
@@ -1319,7 +1435,7 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                         "Task '{}' not found{}",
                         id_or_index,
                         status
-                            .map(|s| format!(" in {} tasks", s))
+                            .map(|status| format!(" in {} tasks", status))
                             .unwrap_or_default()
                     )
                     .bright_red()
@@ -1379,16 +1495,19 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
         TaskCommand::DeleteDatabase => {
             delete_database()?;
         }
-        TaskCommand::Ids { short_only } => {
-            for t in manager.list_tasks(None, true)? {
+        TaskCommand::Ids { short_only, filter } => {
+            let tasks = manager.list_tasks(StatusFilter::AnyOf(filter))?;
+
+            for task in tasks {
                 let out = if short_only {
-                    &t.id[..SHORT_ID_LENGTH]
+                    &task.id[..SHORT_ID_LENGTH]
                 } else {
-                    &t.id
+                    &task.id
                 };
                 println!("{out}");
             }
         }
+
         TaskCommand::EditWithEditor { id_or_index } => {
             let use_all = was_last_list_all();
             let task = match resolve_task(manager, &id_or_index, use_all)? {
@@ -1511,8 +1630,8 @@ fn estimated_lines(command: &TaskCommand, manager: &TaskManager) -> usize {
             show_all,
             status,
         } => {
-            // A second query is cheap; if you prefer you can refactor to reuse it
-            if let Ok(tasks) = manager.list_tasks(status.clone(), *show_all) {
+            let filter = status_filter_from_params(status.clone(), *show_all);
+            if let Ok(tasks) = manager.list_tasks(filter) {
                 if *show_descriptions {
                     tasks.len() * 4 // 1 title + 2 blanks + 1 wrapped line (avg)
                 } else {
