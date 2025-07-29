@@ -64,7 +64,7 @@ mkdir -p ~/.config/fish/completions
 tarea --completions fish >~/.config/fish/completions/tarea.fish
 ```
 
-Restart or `source` the file and ↹‑completion is ready.
+Restart or `source` the file and completion will be ready.
 
 ### Always up‑to‑date (auto‑load in your _rc_)
 
