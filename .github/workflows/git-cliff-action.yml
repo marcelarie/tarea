@@ -34,5 +34,14 @@ jobs:
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           set +e
           git add CHANGELOG.md
-          git commit -m "Update changelog"
+          RANGE="${{ github.event.before }}..${{ github.sha }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          fi
+          COMMITS=$(git log --format=%h $RANGE | paste -sd "," -)
+          git commit -m "Update changelog" -m "$COMMITS"
           git push https://${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git ${{ github.ref_name }}
+
+      - name: Print changelog
+        run: cat CHANGELOG.md
+
