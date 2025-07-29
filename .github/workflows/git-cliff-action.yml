@@ -42,7 +42,8 @@ jobs:
           git commit -m "Update changelog" -m "$COMMITS"
           git push https://${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git ${{ github.ref_name }}
 
-      - name: Print changelog
+      - name: Write changelog diff to summary
         run: |
-          git --no-pager diff --unified=0 HEAD~1 -- CHANGELOG.md || true
+          echo "## ⮞ Changelog Diff" >> $GITHUB_STEP_SUMMARY
+          git diff HEAD~1 HEAD -- CHANGELOG.md >> $GITHUB_STEP_SUMMARY || true
 
