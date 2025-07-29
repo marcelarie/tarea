@@ -18,7 +18,7 @@ clap = { version = "4.5.41", features = ["derive"] }
 clap_complete = "4.5"
 colored = "3.0.0"
 pager = "0.16.1"
-rusqlite = "0.31"
+rusqlite = "0.37.0"
 terminal_size = "0.3"
 textwrap = "0.16"
 uuid = { version = "1.17.0", features = ["v4"] }
