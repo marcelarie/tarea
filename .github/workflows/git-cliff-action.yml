@@ -44,6 +44,9 @@ jobs:
 
       - name: Write changelog diff to summary
         run: |
-          echo "## ⮞ Changelog Diff" >> $GITHUB_STEP_SUMMARY
+          TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+          echo "## Changelog Diff — $TIMESTAMP" >> $GITHUB_STEP_SUMMARY
+          echo '```diff' >> $GITHUB_STEP_SUMMARY
           git diff HEAD~1 HEAD -- CHANGELOG.md >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
