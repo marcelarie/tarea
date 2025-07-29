@@ -44,5 +44,5 @@ jobs:
 
       - name: Print changelog
         run: |
-          git --no-pager diff --unified=0 -- CHANGELOG.md
+          git --no-pager diff --unified=0 HEAD~1 -- CHANGELOG.md || true
 
