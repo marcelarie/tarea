@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Add --delete command with interactive confirmation
 - Add automatic pagination for long task lists
 - *(editor)* Add external editor support for task editing
+- *(ci)* Include commit hashes in changelog commit message
 
 ### Bug Fixes
 
