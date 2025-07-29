@@ -13,6 +13,7 @@ use textwrap::wrap;
 use uuid::Uuid;
 
 use crate::paging::{PagerConfig, init as pager_init};
+mod editor;
 mod help;
 mod paging;
 
@@ -63,16 +64,16 @@ _tarea() {
 //     '--standby[mark standby]:task ID:_tarea_ids' && return
 // }
 // "#;
-const DYNAMIC_COMPLETE_FISH: &str = r#"
-function __tarea_ids
-    tarea --ids --short ^/dev/null
-end
-
-# Attach dynamic ID completion to each flag that takes a TASK_ID
-for opt in show edit done pending standby
-    complete -c tarea -n "__fish_seen_argument -l $opt" -a "(__tarea_ids)"
-end
-"#;
+// const DYNAMIC_COMPLETE_FISH: &str = r#"
+// function __tarea_ids
+//     tarea --ids --short ^/dev/null
+// end
+//
+// # Attach dynamic ID completion to each flag that takes a TASK_ID
+// for opt in show edit done pending standby
+//     complete -c tarea -n "__fish_seen_argument -l $opt" -a "(__tarea_ids)"
+// end
+// "#;
 
 #[derive(Debug)]
 enum TaskError {
@@ -207,6 +208,9 @@ enum TaskCommand {
     Delete {
         id_or_index: String,
         status: Option<Status>,
+    },
+    EditWithEditor {
+        id_or_index: String,
     },
 }
 
@@ -698,6 +702,21 @@ fn parse_command() -> TaskCommand {
     }
 
     if let Some(id_val) = matches.get_one::<String>("edit") {
+        let has_due = matches.contains_id("due-date");
+        let has_desc = matches.contains_id("description");
+        let explicit_name = matches.contains_id("name")
+            || matches
+                .get_many::<String>("task")
+                .map(|vals| !vals.collect::<Vec<_>>().is_empty())
+                .unwrap_or(false);
+
+        let should_open_editor = !has_due && !has_desc && !explicit_name;
+
+        if should_open_editor {
+            return TaskCommand::EditWithEditor {
+                id_or_index: id_val.clone(),
+            };
+        }
         // --due  (date parsing reused)
         if let Some(due_vals) = matches.get_many::<String>("due-date") {
             let raw = due_vals.map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
@@ -1370,6 +1389,59 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
                 println!("{out}");
             }
         }
+        TaskCommand::EditWithEditor { id_or_index } => {
+            let use_all = was_last_list_all();
+            let task = match resolve_task(manager, &id_or_index, use_all)? {
+                Some(t) => t,
+                None => {
+                    println!(
+                        "{}",
+                        format!("Task '{}' not found", id_or_index).bright_red()
+                    );
+                    return Ok(());
+                }
+            };
+            // Launch the editor and retrieve the edited data.
+            let edited = match editor::edit_via_editor(&task) {
+                Ok(ed) => ed,
+                Err(e) => {
+                    // For parse errors or IO issues, print the error and return.
+                    println!("{}", e);
+                    return Ok(());
+                }
+            };
+
+            // Compare the edited fields with the original task and apply updates.
+            // (Same update code as before)
+            let mut changed = false;
+            if edited.name.trim() != task.name {
+                manager.update_name(&task.id, edited.name.trim())?;
+                changed = true;
+            }
+            if edited.description != task.description {
+                manager.update_description(&task.id, &edited.description)?;
+                changed = true;
+            }
+            let new_due_date = match edited.due.as_deref() {
+                Some(s) if !s.trim().is_empty() => match parse_due_date(s) {
+                    Ok(dt) => Some(dt),
+                    Err(e) => {
+                        println!("{}", e);
+                        return Ok(());
+                    }
+                },
+                _ => None,
+            };
+            if new_due_date != task.due_date {
+                manager.update_due(&task.id, new_due_date)?;
+                changed = true;
+            }
+            if changed {
+                println!("{}", "task updated".bright_green());
+            } else {
+                println!("{}", "nothing changed".bright_yellow());
+            }
+        }
     }
     Ok(())
 }
@@ -1431,7 +1503,6 @@ fn delete_database() -> Result<(), TaskError> {
     }
     Ok(())
 }
-
 
 fn estimated_lines(command: &TaskCommand, manager: &TaskManager) -> usize {
     match command {
