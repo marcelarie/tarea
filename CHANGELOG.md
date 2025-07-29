@@ -39,6 +39,10 @@ All notable changes to this project will be documented in this file.
 
 - *(edit)* Enhance task editing documentation with external editor examples
 
+### Miscellaneous Tasks
+
+- *(workflow)* Show changelog diff instead of full content
+
 ## [0.1.0] - 2025-07-23
 
 ### Features
