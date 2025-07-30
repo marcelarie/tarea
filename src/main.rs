@@ -44,7 +44,7 @@ _tarea() {
         --standby)
             filter="--filter=done,pending"
             ;;
-        --show|--edit|--delete)
+        --show|--edit|-e|--delete)
             # No filter, allow matching any task
             ;;
         *)
@@ -92,7 +92,7 @@ function __tarea_status_complete
                 set filter "--filter=done,standby"
             case --standby
                 set filter "--filter=done,pending"
-            case --show --edit --delete
+            case --show --edit --delete -e
                 set filter "--filter=done,pending,standby"
         end
     end
