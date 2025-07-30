@@ -44,12 +44,16 @@ pub fn edit_via_editor(task: &crate::Task) -> Result<EditableTask, TaskError> {
     writeln!(tmp, "name = {:?}", editable.name).map_err(TaskError::Io)?;
 
     // Always write `description` as a triple-quoted multi-line string
-    writeln!(
-        tmp,
-        "description = \"\"\"\n{}\n\"\"\"",
-        editable.description
-    )
-    .map_err(TaskError::Io)?;
+    if !editable.description.trim().is_empty() {
+        writeln!(
+            tmp,
+            "description = \"\"\"\n{}\n\"\"\"",
+            editable.description
+        )
+        .map_err(TaskError::Io)?;
+    } else {
+        writeln!(tmp, "description = \"\"\"\"\"\"").map_err(TaskError::Io)?;
+    }
 
     // For `due`, either write the string or an empty value
     match &editable.due {
