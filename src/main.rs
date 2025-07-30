@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, Local, NaiveDateTime, TimeZone, Utc};
 use clap::{Arg, Command};
 use clap_complete::generate;
 use clap_complete::shells::{Bash, Elvish, Fish, PowerShell, Zsh};
@@ -507,37 +507,71 @@ fn parse_due_date(input: &str) -> Result<DateTime<Utc>, TaskError> {
 
     match trimmed.as_str() {
         "today" => {
-            let date = Utc::now().date_naive();
-            return Ok(date.and_hms_opt(23, 59, 59).unwrap().and_utc());
+            let date = Local::now().date_naive();
+            return Ok(date
+                .and_hms_opt(23, 59, 59)
+                .unwrap()
+                .and_local_timezone(Local)
+                .unwrap()
+                .with_timezone(&Utc));
         }
         "tomorrow" => {
-            let date = (Utc::now() + Duration::days(1)).date_naive();
-            return Ok(date.and_hms_opt(23, 59, 59).unwrap().and_utc());
+            let date = (Local::now() + Duration::days(1)).date_naive();
+            return Ok(date
+                .and_hms_opt(23, 59, 59)
+                .unwrap()
+                .and_local_timezone(Local)
+                .unwrap()
+                .with_timezone(&Utc));
         }
         _ => {}
     }
 
-    if let Some(h) = trimmed.strip_suffix('h') {
-        if let Ok(n) = h.parse::<i64>() {
-            return Ok(Utc::now() + Duration::hours(n));
+    let cleaned = trimmed.replace(' ', "");
+
+    if let Some(h_pos) = cleaned.find('h') {
+        let (hours_part, rest) = cleaned.split_at(h_pos);
+        let rest = &rest[1..]; // drop 'h'
+
+        if let Ok(h) = hours_part.parse::<i64>() {
+            let mut duration = Duration::hours(h);
+            if !rest.is_empty() {
+                if let Some(mins_str) = rest.strip_suffix('m') {
+                    if !mins_str.is_empty() {
+                        if let Ok(m) = mins_str.parse::<i64>() {
+                            duration += Duration::minutes(m);
+                        }
+                    }
+                } else {
+                    return Err(TaskError::InvalidDate(format!(
+                        "Unable to parse '{}'. Expected minutes after hours, e.g. '4h30m'",
+                        input
+                    )));
+                }
+            }
+            return Ok(Utc::now() + duration);
         }
     }
 
-    if let Some(m) = trimmed.strip_suffix('m') {
-        if let Ok(n) = m.parse::<i64>() {
-            return Ok(Utc::now() + Duration::minutes(n));
+    if let Some(mins_str) = cleaned.strip_suffix('m') {
+        if let Ok(m) = mins_str.parse::<i64>() {
+            return Ok(Utc::now() + Duration::minutes(m));
         }
     }
 
-    let formats = ["%Y-%m-%d", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"];
-    for fmt in &formats {
-        if let Ok(dt) = NaiveDateTime::parse_from_str(&trimmed, fmt) {
-            return Ok(dt.and_utc());
+    for fmt in ["%Y-%m-%d", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"] {
+        if let Ok(naive) = NaiveDateTime::parse_from_str(&trimmed, fmt) {
+            let local_dt = Local
+                .from_local_datetime(&naive)
+                .single()
+                .ok_or_else(|| TaskError::InvalidDate("Ambiguous or invalid local time".into()))?;
+
+            return Ok(local_dt.with_timezone(&Utc));
         }
     }
 
     Err(TaskError::InvalidDate(format!(
-        "Unable to parse date '{}'. Use natural language like 'today', '2h' or an absolute date 'YYYY-MM-DD [HH:MM[:SS]]'",
+        "Unable to parse '{}'. Use natural language like 'today', '2h 30m', or an absolute date 'YYYY-MM-DD [HH:MM[:SS]]'",
         input
     )))
 }
@@ -1588,23 +1622,31 @@ fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<(), Ta
 fn pretty_time(dt: DateTime<Utc>) -> String {
     let now = Utc::now();
     let secs = (dt - now).num_seconds();
+    let future = secs >= 0;
+    let abs_secs = secs.abs();
 
-    if secs.abs() < 86_400 {
-        if secs >= 0 {
-            let mins = (secs + 59) / 60;
-            return if mins < 60 {
-                format!("in {}m", mins)
-            } else {
-                format!("in {}h", (mins + 59) / 60)
-            };
-        } else {
-            let mins = (-secs + 59) / 60;
-            return if mins < 60 {
-                format!("{}m ago", mins)
-            } else {
-                format!("{}h ago", (mins + 59) / 60)
-            };
+    if abs_secs < 86_400 {
+        let mins = (abs_secs + 59) / 60;
+        let hours = mins / 60;
+        let minutes = mins % 60;
+
+        let mut parts = Vec::new();
+        if hours > 0 {
+            parts.push(format!("{}h", hours));
         }
+        if minutes > 0 {
+            parts.push(format!("{}m", minutes));
+        }
+        if parts.is_empty() {
+            parts.push("0m".into());
+        }
+
+        let phrase = parts.join(" ");
+        return if future {
+            format!("in {}", phrase)
+        } else {
+            format!("{} ago", phrase)
+        };
     }
 
     let d = dt.date_naive();
