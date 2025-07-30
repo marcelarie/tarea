@@ -26,6 +26,7 @@ All notable changes to this project will be documented in this file.
 - Change DESCRIPTION_INDENTATION_LENGHT to be indented with the status dot
 - Description indentation and wrapping
 - Allow to use --name with status params like `tarea --done --name`
+- Trim multi-line desc in external editor toml file before saving
 
 ### Other
 
