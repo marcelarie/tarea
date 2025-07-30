@@ -46,6 +46,7 @@ _tarea() {
             ;;
         --show|--edit|-e|--delete)
             # No filter, allow matching any task
+            filter="--filter=done,pending,standby"
             ;;
         *)
             _tarea_clap "$@"
