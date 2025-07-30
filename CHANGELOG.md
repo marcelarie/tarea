@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 - *(ci)* Include commit hashes in changelog commit message
 - *(ci)* Write changelog diff to GitHub Actions step summary
 - Add status filtering and improve bash completion
+- *(time)* Enhance date parsing with local timezone support and combined hour/minute formats
 
 ### Bug Fixes
 
