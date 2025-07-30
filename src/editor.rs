@@ -44,16 +44,14 @@ pub fn edit_via_editor(task: &crate::Task) -> Result<EditableTask, TaskError> {
     writeln!(tmp, "name = {:?}", editable.name).map_err(TaskError::Io)?;
 
     // Always write `description` as a triple-quoted multi-line string
-    if !editable.description.trim().is_empty() {
-        writeln!(
-            tmp,
-            "description = \"\"\"\n{}\n\"\"\"",
-            editable.description
-        )
-        .map_err(TaskError::Io)?;
-    } else {
-        writeln!(tmp, "description = \"\"\"\"\"\"").map_err(TaskError::Io)?;
-    }
+    writeln!(tmp, "# Multi-line description. Leave blank if not needed.").map_err(TaskError::Io)?;
+
+    writeln!(
+        tmp,
+        "description = \"\"\"\n{}\n\"\"\"",
+        editable.description.trim_end()
+    )
+    .map_err(TaskError::Io)?;
 
     // For `due`, either write the string or an empty value
     match &editable.due {
@@ -81,6 +79,11 @@ pub fn edit_via_editor(task: &crate::Task) -> Result<EditableTask, TaskError> {
         .filter(|line| !line.trim_start().starts_with('#'))
         .collect::<Vec<_>>()
         .join("\n");
-    toml::from_str(&cleaned)
-        .map_err(|e| TaskError::InvalidInput(format!("Failed to parse TOML: {e}")))
+
+    let mut edited: EditableTask = toml::from_str(&cleaned)
+        .map_err(|e| TaskError::InvalidInput(format!("Failed to parse TOML: {e}")))?;
+
+    edited.description = edited.description.trim().to_string();
+
+    Ok(edited)
 }
