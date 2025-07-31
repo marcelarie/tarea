@@ -1657,6 +1657,7 @@ fn pretty_time(dt: DateTime<Utc>) -> String {
         let minutes = mins % 60;
 
         let mut parts = Vec::new();
+        // TODO: Make sure that all the list times are indented correctly
         if hours > 0 {
             parts.push(format!("{}h", hours));
         }
