@@ -20,7 +20,6 @@ All notable changes to this project will be documented in this file.
 - *(ci)* Write changelog diff to GitHub Actions step summary
 - Add status filtering and improve bash completion
 - *(time)* Enhance date parsing with local timezone support and combined hour/minute formats
-- *(display)* Add text wrapping for task descriptions
 
 ### Bug Fixes
 
