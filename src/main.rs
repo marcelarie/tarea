@@ -1184,8 +1184,33 @@ fn print_task_name(task: &Task, pad: usize) {
 }
 
 fn print_task_description(task: &Task, pad: usize) {
-    if !task.description.is_empty() {
-        println!("{:<pad$} {}", "details".dimmed(), task.description);
+    if task.description.is_empty() {
+        return;
+    }
+
+    let indent_len = (pad + 1).max(MIN_DESCRIPTION_INDENT);
+    let indent = " ".repeat(indent_len);
+
+    let term_w = term_width();
+    let wrap_limit = if term_w >= WRAP_COLUMN {
+        WRAP_COLUMN
+    } else {
+        term_w.saturating_sub(1)
+    };
+    let wrap_width = wrap_limit.saturating_sub(indent_len);
+
+    let wrapped = textwrap::wrap(&task.description, wrap_width);
+
+    if let Some((first, rest)) = wrapped.split_first() {
+        println!("{:<pad$} {}", "details".dimmed(), first.dimmed(), pad = pad);
+
+        for line in rest {
+            println!("{}{}", indent, line.dimmed());
+        }
+
+        if !rest.is_empty() {
+            println!();
+        }
     }
 }
 
