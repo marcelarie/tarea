@@ -39,6 +39,7 @@ All notable changes to this project will be documented in this file.
 
 - [**breaking**] Consolidate status filtering and updating into unified flags
 - *(cli)* Remove show_all parameter from command variants
+- Break main.rs into focused modules
 
 ### Documentation
 
