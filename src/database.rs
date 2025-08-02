@@ -1,6 +1,6 @@
 use crate::types::{Status, StatusFilter, Task, TaskError};
 use crate::utils::validate_task_name;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use rusqlite::{Connection, Result as SqlResult};
 use std::io;
 use std::path::PathBuf;

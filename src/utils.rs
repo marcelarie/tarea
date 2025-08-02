@@ -72,24 +72,54 @@ pub fn parse_due_date(input: &str) -> Result<DateTime<Utc>, TaskError> {
                     )));
                 }
             }
-            return Ok(Utc::now() + duration);
+            return Ok((Local::now() + duration).with_timezone(&Utc));
         }
     }
 
     if let Some(mins_str) = cleaned.strip_suffix('m') {
         if let Ok(m) = mins_str.parse::<i64>() {
-            return Ok(Utc::now() + Duration::minutes(m));
+            return Ok((Local::now() + Duration::minutes(m)).with_timezone(&Utc));
         }
     }
 
-    for fmt in ["%Y-%m-%d", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"] {
-        if let Ok(naive) = NaiveDateTime::parse_from_str(&trimmed, fmt) {
-            let local_dt = Local
-                .from_local_datetime(&naive)
-                .single()
-                .ok_or_else(|| TaskError::InvalidDate("Ambiguous or invalid local time".into()))?;
+    // Try date-only format first (defaults to 00:00:00)
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(&trimmed, "%Y-%m-%d") {
+        let naive = date.and_hms_opt(0, 0, 0).unwrap();
+        match Local.from_local_datetime(&naive) {
+            chrono::LocalResult::Single(local_dt) => {
+                return Ok(local_dt.with_timezone(&Utc));
+            }
+            chrono::LocalResult::Ambiguous(_earlier, later) => {
+                return Ok(later.with_timezone(&Utc));
+            }
+            chrono::LocalResult::None => {
+                return Err(TaskError::InvalidDate(format!(
+                    "Invalid local time '{}' (likely during DST transition)",
+                    input
+                )));
+            }
+        }
+    }
 
-            return Ok(local_dt.with_timezone(&Utc));
+    // Try date-time formats
+    for fmt in ["%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"] {
+        if let Ok(naive) = NaiveDateTime::parse_from_str(&trimmed, fmt) {
+            match Local.from_local_datetime(&naive) {
+                chrono::LocalResult::Single(local_dt) => {
+                    return Ok(local_dt.with_timezone(&Utc));
+                }
+                chrono::LocalResult::Ambiguous(_earlier, later) => {
+                    // During DST "fall back":
+                    // prefer the later (standard time) interpretation
+                    return Ok(later.with_timezone(&Utc));
+                }
+                chrono::LocalResult::None => {
+                    return Err(TaskError::InvalidDate(format!(
+                        "Invalid local time '{}' (likely during DST transition)",
+                        input
+                    )));
+                }
+            }
         }
     }
 
@@ -204,4 +234,212 @@ pub fn format_task_not_found_message(id: &str, context: Option<&str>) -> impl st
         None => format!("{} not found", base_msg),
     };
     full_msg.bright_red()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_task_name_valid() {
+        assert!(validate_task_name("Valid task name").is_ok());
+        assert!(validate_task_name("  Trimmed  ").is_ok());
+    }
+
+    #[test]
+    fn test_validate_task_name_empty() {
+        assert!(validate_task_name("").is_err());
+        assert!(validate_task_name("   ").is_err());
+    }
+
+    #[test]
+    fn test_validate_task_name_too_long() {
+        let more_than_120_chars = "a".repeat(MAX_TASK_NAME_LENGTH + 1);
+        assert!(validate_task_name(&more_than_120_chars).is_err());
+        assert!(matches!(
+            validate_task_name(&more_than_120_chars),
+            Err(TaskError::InvalidInput(msg)) if msg.contains("Task name too long")
+        ));
+    }
+
+    #[test]
+    fn test_parse_due_date_today() {
+        let today = Local::now().date_naive();
+        let expected = today
+            .and_hms_opt(23, 59, 59)
+            .unwrap()
+            .and_local_timezone(Local)
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(parse_due_date("today").unwrap(), expected);
+    }
+
+    #[test]
+    fn test_parse_due_date_tomorrow() {
+        let tomorrow = (Local::now() + Duration::days(1)).date_naive();
+        let expected = tomorrow
+            .and_hms_opt(23, 59, 59)
+            .unwrap()
+            .and_local_timezone(Local)
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(parse_due_date("tomorrow").unwrap(), expected);
+    }
+
+    #[test]
+    fn test_parse_due_date_hours_minutes() {
+        let now = Local::now();
+        let result = parse_due_date("2h30m").unwrap();
+        let expected = (now + Duration::hours(2) + Duration::minutes(30)).with_timezone(&Utc);
+
+        // allow for up to 1 second timing differences
+        let diff = (result - expected).abs();
+        assert!(
+            diff < Duration::seconds(1),
+            "Difference too large: {:?}",
+            diff
+        );
+    }
+
+    #[test]
+    fn test_parse_due_date_minutes() {
+        let now = Local::now();
+        let result = parse_due_date("30m").unwrap();
+        let expected = (now + Duration::minutes(30)).with_timezone(&Utc);
+
+        // allow for up to 1 second timing differences
+        let diff = (result - expected).abs();
+        assert!(
+            diff < Duration::seconds(1),
+            "Difference too large: {:?}",
+            diff
+        );
+    }
+
+    #[test]
+    fn test_parse_due_date_just_hours() {
+        let now = Local::now();
+        let result = parse_due_date("2h").unwrap();
+        let expected = (now + Duration::hours(2)).with_timezone(&Utc);
+
+        let diff = (result - expected).abs();
+        assert!(
+            diff < Duration::seconds(1),
+            "Difference too large: {:?}",
+            diff
+        );
+    }
+
+    #[test]
+    fn test_parse_due_date_absolute_date_only() {
+        let result = parse_due_date("2023-12-25").unwrap();
+        let date = chrono::NaiveDate::parse_from_str("2023-12-25", "%Y-%m-%d").unwrap();
+        let expected_naive = date.and_hms_opt(0, 0, 0).unwrap();
+        let expected = Local
+            .from_local_datetime(&expected_naive)
+            .single()
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_parse_due_date_absolute_date_time() {
+        let result = parse_due_date("2023-12-25 14:30").unwrap();
+        let expected_naive =
+            NaiveDateTime::parse_from_str("2023-12-25 14:30", "%Y-%m-%d %H:%M").unwrap();
+        let expected = Local
+            .from_local_datetime(&expected_naive)
+            .single()
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_parse_due_date_absolute_date_time_seconds() {
+        let result = parse_due_date("2023-12-25 14:30:45").unwrap();
+        let expected_naive =
+            NaiveDateTime::parse_from_str("2023-12-25 14:30:45", "%Y-%m-%d %H:%M:%S").unwrap();
+        let expected = Local
+            .from_local_datetime(&expected_naive)
+            .single()
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_parse_due_date_case_insensitive() {
+        // Test that "TODAY" and "TOMORROW" work
+        assert!(parse_due_date("TODAY").is_ok());
+        assert!(parse_due_date("Tomorrow").is_ok());
+        assert!(parse_due_date("TOMORROW").is_ok());
+    }
+
+    #[test]
+    fn test_parse_due_date_whitespace_handling() {
+        let now = Local::now();
+        let result = parse_due_date("  2h 30m  ").unwrap();
+        let expected = (now + Duration::hours(2) + Duration::minutes(30)).with_timezone(&Utc);
+
+        let diff = (result - expected).abs();
+        assert!(
+            diff < Duration::seconds(1),
+            "Difference too large: {:?}",
+            diff
+        );
+    }
+
+    #[test]
+    fn test_parse_due_date_invalid_hour_minute_format() {
+        // Hours followed by something other than 'm' should error
+        assert!(parse_due_date("2h30").is_err());
+        assert!(parse_due_date("2h30x").is_err());
+
+        // Verify the error message
+        let err = parse_due_date("2h30").unwrap_err();
+        assert!(
+            matches!(err, TaskError::InvalidDate(msg) if msg.contains("Expected minutes after hours"))
+        );
+    }
+
+    #[test]
+    fn test_parse_due_date_invalid_formats() {
+        assert!(parse_due_date("invalid").is_err());
+        assert!(parse_due_date("2023-13-01").is_err()); // Invalid month
+        assert!(parse_due_date("2023-12-32").is_err()); // Invalid day
+        assert!(parse_due_date("abc").is_err());
+        assert!(parse_due_date("").is_err());
+    }
+
+    #[test]
+    fn test_parse_due_date_negative_values() {
+        // Negative hours/minutes should still parse but result in past dates
+        let now = Local::now().with_timezone(&Utc);
+        let result = parse_due_date("-1h").unwrap();
+        assert!(result < now);
+    }
+
+    #[test]
+    fn test_parse_due_date_zero_values() {
+        let now = Local::now().with_timezone(&Utc);
+        let result = parse_due_date("0h").unwrap();
+
+        let diff = (result - now).abs();
+        assert!(diff < Duration::seconds(1));
+    }
+
+    #[test]
+    fn test_parse_due_date_large_values() {
+        let now = Local::now();
+        let result = parse_due_date("24h").unwrap();
+        let expected = (now + Duration::hours(24)).with_timezone(&Utc);
+
+        let diff = (result - expected).abs();
+        assert!(diff < Duration::seconds(1));
+    }
 }

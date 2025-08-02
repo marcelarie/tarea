@@ -1,4 +1,5 @@
 use crate::types::TaskError;
+use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::io::Write as IoWrite;
 use std::process::Command;
@@ -22,7 +23,7 @@ impl EditableTask {
             description: task.description.clone(),
             due: task
                 .due_date
-                .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string()),
+                .map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string()),
         }
     }
 }

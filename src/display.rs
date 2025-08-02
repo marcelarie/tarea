@@ -1,5 +1,5 @@
 use crate::types::{Status, Task};
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, Timelike, Utc};
 use colored::*;
 use terminal_size::{Width, terminal_size};
 use textwrap::wrap;
@@ -243,7 +243,19 @@ pub fn pretty_time(dt: DateTime<Utc>) -> String {
     let future = secs >= 0;
     let abs_secs = secs.abs();
 
-    if abs_secs < 86_400 {
+    // TODO: Better solution would be to track the original format from database
+    // and pass it here, so we can distinguish between user-specified midnight
+    // (e.g., "2025-08-12 00:00") and date-only input (e.g., "2025-08-12").
+    // For now, we use heuristics:
+    // - Exact midnight local time = date-only input (like "2025-08-12")  
+    // - 23:59:59 local time = "today"/"tomorrow" input (should use relative time)
+    let local_dt = dt.with_timezone(&chrono::Local);
+    let is_date_only = local_dt.time().hour() == 0 && local_dt.time().minute() == 0 && local_dt.time().second() == 0;
+    let is_end_of_day = local_dt.time().hour() == 23 && local_dt.time().minute() == 59 && local_dt.time().second() == 59;
+
+    // Use relative time for "today"/"tomorrow" (23:59:59) and other time-specific tasks
+    // But never for date-only tasks (00:00:00)
+    if !is_date_only && abs_secs < 86_400 {
         let mins = (abs_secs + 59) / 60;
         let hours = mins / 60;
         let minutes = mins % 60;
@@ -272,11 +284,16 @@ pub fn pretty_time(dt: DateTime<Utc>) -> String {
     let diff_days = (d - nd).num_days();
 
     match diff_days {
-        0 => format!("today at {}", dt.format("%H:%M")),
-        -1 => format!("yesterday at {}", dt.format("%H:%M")),
-        1 => format!("tomorrow at {}", dt.format("%H:%M")),
-        -6..=6 => dt.format("%A at %H:%M").to_string(),
-        _ => dt.format("%Y-%m-%d %H:%M").to_string(),
+        0 if is_date_only => "today".to_string(),
+        0 => format!("today at {}", dt.with_timezone(&chrono::Local).format("%H:%M")),
+        -1 if is_date_only => "yesterday".to_string(),
+        -1 => format!("yesterday at {}", dt.with_timezone(&chrono::Local).format("%H:%M")),
+        1 if is_date_only => "tomorrow".to_string(),
+        1 => format!("tomorrow at {}", dt.with_timezone(&chrono::Local).format("%H:%M")),
+        -6..=6 if is_date_only => dt.format("%A").to_string(),
+        -6..=6 => dt.with_timezone(&chrono::Local).format("%A at %H:%M").to_string(),
+        _ if is_date_only => dt.format("%Y-%m-%d").to_string(),
+        _ => dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string(),
     }
 }
 
