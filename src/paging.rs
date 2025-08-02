@@ -2,7 +2,7 @@ use atty::Stream;
 use colored::control;
 use pager::Pager;
 use std::io;
-use terminal_size::{Height, terminal_size};
+use terminal_size::{terminal_size, Height};
 
 pub struct PagerConfig {
     /// Rough number of lines that your program is going to print.
