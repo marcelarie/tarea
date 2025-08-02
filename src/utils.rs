@@ -196,3 +196,12 @@ pub fn delete_database() -> Result<(), TaskError> {
     }
     Ok(())
 }
+
+pub fn format_task_not_found_message(id: &str, context: Option<&str>) -> impl std::fmt::Display {
+    let base_msg = format!("task '{}'", id);
+    let full_msg = match context {
+        Some(ctx) => format!("{} not found{}", base_msg, ctx),
+        None => format!("{} not found", base_msg),
+    };
+    full_msg.bright_red()
+}

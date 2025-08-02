@@ -1,17 +1,17 @@
 use crate::database::TaskManager;
-use crate::display::{format_task_line_with_number, print_task_details, StatusDisplay};
+use crate::display::{StatusDisplay, format_task_line_with_number, print_task_details};
 use crate::editor;
 use crate::types::{EditField, Status, StatusFilter, Task, TaskCommand, TaskError};
 use crate::utils::{
-    delete_database, is_number, parse_due_date, resolve_task, save_last_list_all,
-    status_filter_from_params, was_last_list_all,
+    delete_database, format_task_not_found_message, is_number, parse_due_date, resolve_task,
+    save_last_list_all, status_filter_from_params, was_last_list_all,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
 use clap_complete::generate;
 use clap_complete::shells::{Bash, Elvish, Fish, PowerShell, Zsh};
 use colored::*;
 use std::io::{self, Write};
-use terminal_size::{terminal_size, Width};
+use terminal_size::{Width, terminal_size};
 
 const WRAP_COLUMN: usize = 80;
 const SHORT_ID_LENGTH: usize = 8;
@@ -70,9 +70,10 @@ fn handle_add(
     description: Option<String>,
     due_date: Option<DateTime<Utc>>,
 ) -> Result<(), TaskError> {
-    let task = Task::new(name.clone(), description, due_date)?;
-    manager.add_task(task)?;
-    println!("{} {}", "task saved:".bright_green(), name);
+    let task = Task::new(name, description, due_date)?;
+    manager.add_task(task.clone())?;
+    println!("{}", "task created successfully".bright_green());
+    print_task_details(&task, true);
     Ok(())
 }
 
@@ -129,8 +130,14 @@ fn handle_delete(
 
     match task_opt {
         Some(task) => {
+            let task_display = if task.name.len() > 50 {
+                format!("{}...", &task.name[..47])
+            } else {
+                task.name.clone()
+            };
+
             let confirmed = {
-                print!("Delete task '{}'? (y/N): ", task.name);
+                print!("delete task '{}'? (y/N): ", task_display);
                 io::stdout().flush()?;
                 let mut input = String::new();
                 io::stdin().read_line(&mut input)?;
@@ -139,25 +146,33 @@ fn handle_delete(
 
             if confirmed {
                 if manager.delete_task_by_id(&task.id)? {
-                    println!("{}", "Task deleted successfully".bright_green());
+                    println!("{}", "success".bright_green());
                 } else {
-                    println!("{}", "Task not found".bright_red());
+                    println!(
+                        "{}",
+                        "task not found (may have been already deleted)".bright_red()
+                    );
                 }
             } else {
-                println!("{}", "Task deletion cancelled".bright_yellow());
+                println!("{}", "task deletion cancelled".bright_yellow());
             }
         }
-        None => println!(
-            "{}",
-            format!(
-                "Task '{}' not found{}",
-                id_or_index,
-                status
-                    .map(|status| format!(" in {} tasks", status))
-                    .unwrap_or_default()
-            )
-            .bright_red()
-        ),
+        None => {
+            let context = status
+                .map(|s| format!(" in {} tasks", s))
+                .unwrap_or_else(|| {
+                    if was_last_list_all() {
+                        " in all tasks".to_string()
+                    } else {
+                        " in pending tasks".to_string()
+                    }
+                });
+
+            println!(
+                "{}",
+                format_task_not_found_message(&id_or_index, Some(&context))
+            );
+        }
     }
     Ok(())
 }
@@ -222,8 +237,8 @@ fn handle_show(manager: &TaskManager, id: String) -> Result<(), TaskError> {
     let task_opt = resolve_task(manager, &id, use_all)?;
 
     match task_opt {
-        Some(task) => print_task_details(&task),
-        None => println!("{}", format!("Task '{}' not found", id).dimmed()),
+        Some(task) => print_task_details(&task, false),
+        None => println!("{}", format_task_not_found_message(&id, None)),
     }
     Ok(())
 }
@@ -246,17 +261,13 @@ fn handle_show_name(
     };
     match task_opt {
         Some(t) => println!("{}", t.name),
-        None => println!(
-            "{}",
-            format!(
-                "Task '{}' not found{}",
-                id_or_index,
-                status
-                    .map(|status| format!(" in {} tasks", status))
-                    .unwrap_or_default()
-            )
-            .bright_red()
-        ),
+        None => {
+            let context = status.map(|s| format!(" in {} tasks", s));
+            println!(
+                "{}",
+                format_task_not_found_message(&id_or_index, context.as_deref())
+            );
+        }
     }
     Ok(())
 }
@@ -270,10 +281,7 @@ fn handle_edit(
     let full_id = match resolve_task(manager, &id_or_index, use_all)? {
         Some(t) => t.id,
         None => {
-            println!(
-                "{}",
-                format!("Task '{}' not found", id_or_index).bright_red()
-            );
+            println!("{}", format_task_not_found_message(&id_or_index, None));
             return Ok(());
         }
     };
@@ -300,7 +308,7 @@ fn handle_update_status(
     let target_id = match resolve_task(manager, &id, was_last_list_all())? {
         Some(t) => t.id,
         None => {
-            println!("{}", format!("Task '{}' not found", id).bright_red());
+            println!("{}", format_task_not_found_message(&id, None));
             return Ok(());
         }
     };
@@ -317,7 +325,7 @@ fn handle_update_status(
                 format!("Task {} marked as {}", id, status).color(color)
             );
         }
-        false => println!("{}", format!("Task '{}' not found", id).bright_red()),
+        false => println!("{}", format_task_not_found_message(&id, None)),
     }
     Ok(())
 }
@@ -345,10 +353,7 @@ fn handle_edit_with_editor(manager: &TaskManager, id_or_index: String) -> Result
     let task = match resolve_task(manager, &id_or_index, use_all)? {
         Some(t) => t,
         None => {
-            println!(
-                "{}",
-                format!("Task '{}' not found", id_or_index).bright_red()
-            );
+            println!("{}", format_task_not_found_message(&id_or_index, None));
             return Ok(());
         }
     };

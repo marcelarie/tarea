@@ -1,7 +1,7 @@
 use crate::types::{Status, Task};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use colored::*;
-use terminal_size::{terminal_size, Width};
+use terminal_size::{Width, terminal_size};
 use textwrap::wrap;
 
 const WRAP_COLUMN: usize = 80;
@@ -143,14 +143,18 @@ fn print_task_description_formatted(task: &Task, indent_len: usize, time_col_sta
     println!();
 }
 
-pub fn print_task_details(task: &Task) {
+pub fn print_task_details(task: &Task, minimal_mode: bool) {
     let pad = 8;
     print_task_id(task, pad);
     print_task_name(task, pad);
     print_task_description(task, pad);
-    print_task_created(task, pad);
+    if !minimal_mode {
+        print_task_created(task, pad);
+    }
     print_task_due_date(task, pad);
-    print_task_status(task, pad, StatusDisplay::Dot);
+    if !minimal_mode {
+        print_task_status(task, pad, StatusDisplay::Dot);
+    }
 }
 
 fn print_task_id(task: &Task, pad: usize) {

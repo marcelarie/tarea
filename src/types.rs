@@ -101,7 +101,7 @@ impl StatusFilter {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Task {
     pub id: String,
     pub date: String,
