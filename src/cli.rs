@@ -1,4 +1,4 @@
-use crate::types::{Status, TaskCommand, EditField};
+use crate::types::{EditField, Status, TaskCommand};
 use crate::utils::parse_due_date;
 use chrono::{DateTime, Utc};
 use clap::{Arg, Command};

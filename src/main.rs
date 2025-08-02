@@ -10,11 +10,10 @@ mod paging;
 mod types;
 mod utils;
 
-// Re-export types for public use
-pub use types::*;
+use commands::{estimated_lines, execute_command};
 use database::TaskManager;
-use commands::{execute_command, estimated_lines};
-use paging::{PagerConfig, init as pager_init};
+use paging::{init as pager_init, PagerConfig};
+pub use types::*;
 
 fn main() -> io::Result<()> {
     help::handle_flag_help()?;

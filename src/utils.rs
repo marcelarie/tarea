@@ -1,10 +1,10 @@
-use crate::types::{TaskError, Status, StatusFilter, Task};
 use crate::database::TaskManager;
+use crate::types::{Status, StatusFilter, Task, TaskError};
 use chrono::{DateTime, Duration, Local, NaiveDateTime, TimeZone, Utc};
+use colored::*;
+use std::io;
 use std::path::PathBuf;
 use std::{env, fs};
-use std::io;
-use colored::*;
 
 const MAX_TASK_NAME_LENGTH: usize = 120;
 
@@ -174,7 +174,7 @@ pub fn was_last_list_all() -> bool {
 
 pub fn delete_database() -> Result<(), TaskError> {
     use std::io::Write;
-    
+
     print!("Are you sure you want to delete the database? This action cannot be undone. (y/N): ");
     io::stdout().flush()?;
 

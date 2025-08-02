@@ -1,14 +1,17 @@
-use crate::types::{TaskCommand, TaskError, Task, Status, StatusFilter, EditField};
 use crate::database::TaskManager;
 use crate::display::{format_task_line_with_number, print_task_details, StatusDisplay};
-use crate::utils::{status_filter_from_params, was_last_list_all, save_last_list_all, resolve_task, is_number, delete_database, parse_due_date};
 use crate::editor;
+use crate::types::{EditField, Status, StatusFilter, Task, TaskCommand, TaskError};
+use crate::utils::{
+    delete_database, is_number, parse_due_date, resolve_task, save_last_list_all,
+    status_filter_from_params, was_last_list_all,
+};
 use chrono::{DateTime, NaiveDateTime, Utc};
-use colored::*;
-use std::io::{self, Write};
-use terminal_size::{Width, terminal_size};
 use clap_complete::generate;
 use clap_complete::shells::{Bash, Elvish, Fish, PowerShell, Zsh};
+use colored::*;
+use std::io::{self, Write};
+use terminal_size::{terminal_size, Width};
 
 const WRAP_COLUMN: usize = 80;
 const SHORT_ID_LENGTH: usize = 8;
@@ -21,49 +24,63 @@ pub fn execute_command(manager: &TaskManager, command: TaskCommand) -> Result<()
             due_date,
         } => handle_add(manager, name, description, due_date),
 
-        TaskCommand::Completions { shell, dynamic_bash, dynamic_fish } => 
-            handle_completions(shell, dynamic_bash, dynamic_fish),
+        TaskCommand::Completions {
+            shell,
+            dynamic_bash,
+            dynamic_fish,
+        } => handle_completions(shell, dynamic_bash, dynamic_fish),
 
-        TaskCommand::Delete { id_or_index, status } => 
-            handle_delete(manager, id_or_index, status),
+        TaskCommand::Delete {
+            id_or_index,
+            status,
+        } => handle_delete(manager, id_or_index, status),
 
-        TaskCommand::List { status, show_all, show_descriptions } => 
-            handle_list(manager, status, show_all, show_descriptions),
+        TaskCommand::List {
+            status,
+            show_all,
+            show_descriptions,
+        } => handle_list(manager, status, show_all, show_descriptions),
 
-        TaskCommand::ListNames { show_all, status } => 
-            handle_list_names(manager, show_all, status),
+        TaskCommand::ListNames { show_all, status } => handle_list_names(manager, show_all, status),
 
-        TaskCommand::Show { id } => 
-            handle_show(manager, id),
+        TaskCommand::Show { id } => handle_show(manager, id),
 
-        TaskCommand::ShowName { id_or_index, status } => 
-            handle_show_name(manager, id_or_index, status),
+        TaskCommand::ShowName {
+            id_or_index,
+            status,
+        } => handle_show_name(manager, id_or_index, status),
 
-        TaskCommand::Edit { id_or_index, field } => 
-            handle_edit(manager, id_or_index, field),
+        TaskCommand::Edit { id_or_index, field } => handle_edit(manager, id_or_index, field),
 
-        TaskCommand::UpdateStatus { id, status } => 
-            handle_update_status(manager, id, status),
+        TaskCommand::UpdateStatus { id, status } => handle_update_status(manager, id, status),
 
-        TaskCommand::DeleteDatabase => 
-            delete_database(),
+        TaskCommand::DeleteDatabase => delete_database(),
 
-        TaskCommand::Ids { short_only, filter } => 
-            handle_ids(manager, short_only, filter),
+        TaskCommand::Ids { short_only, filter } => handle_ids(manager, short_only, filter),
 
-        TaskCommand::EditWithEditor { id_or_index } => 
-            handle_edit_with_editor(manager, id_or_index),
+        TaskCommand::EditWithEditor { id_or_index } => {
+            handle_edit_with_editor(manager, id_or_index)
+        }
     }
 }
 
-fn handle_add(manager: &TaskManager, name: String, description: Option<String>, due_date: Option<DateTime<Utc>>) -> Result<(), TaskError> {
+fn handle_add(
+    manager: &TaskManager,
+    name: String,
+    description: Option<String>,
+    due_date: Option<DateTime<Utc>>,
+) -> Result<(), TaskError> {
     let task = Task::new(name.clone(), description, due_date)?;
     manager.add_task(task)?;
     println!("{} {}", "task saved:".bright_green(), name);
     Ok(())
 }
 
-fn handle_completions(shell: String, dynamic_bash: String, dynamic_fish: String) -> Result<(), TaskError> {
+fn handle_completions(
+    shell: String,
+    dynamic_bash: String,
+    dynamic_fish: String,
+) -> Result<(), TaskError> {
     let mut cmd = crate::cli::build_cli();
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -87,7 +104,11 @@ fn handle_completions(shell: String, dynamic_bash: String, dynamic_fish: String)
     Ok(())
 }
 
-fn handle_delete(manager: &TaskManager, id_or_index: String, status: Option<Status>) -> Result<(), TaskError> {
+fn handle_delete(
+    manager: &TaskManager,
+    id_or_index: String,
+    status: Option<Status>,
+) -> Result<(), TaskError> {
     let use_all = was_last_list_all();
     let filter = match (status.clone(), use_all) {
         (Some(_s), _) if use_all => StatusFilter::All,
@@ -141,7 +162,12 @@ fn handle_delete(manager: &TaskManager, id_or_index: String, status: Option<Stat
     Ok(())
 }
 
-fn handle_list(manager: &TaskManager, status: Option<Status>, show_all: bool, show_descriptions: bool) -> Result<(), TaskError> {
+fn handle_list(
+    manager: &TaskManager,
+    status: Option<Status>,
+    show_all: bool,
+    show_descriptions: bool,
+) -> Result<(), TaskError> {
     let filter = status_filter_from_params(status.clone(), show_all);
     let tasks = manager.list_tasks(filter)?;
 
@@ -156,7 +182,7 @@ fn handle_list(manager: &TaskManager, status: Option<Status>, show_all: bool, sh
     }
 
     let layout = calculate_list_layout(&tasks, show_descriptions);
-    
+
     for (idx, task) in tasks.iter().enumerate() {
         format_task_line_with_number(
             idx + 1,
@@ -174,7 +200,11 @@ fn handle_list(manager: &TaskManager, status: Option<Status>, show_all: bool, sh
     Ok(())
 }
 
-fn handle_list_names(manager: &TaskManager, show_all: bool, status: Option<Status>) -> Result<(), TaskError> {
+fn handle_list_names(
+    manager: &TaskManager,
+    show_all: bool,
+    status: Option<Status>,
+) -> Result<(), TaskError> {
     let filter = status_filter_from_params(status, show_all);
     let tasks = manager.list_tasks(filter)?;
     if tasks.is_empty() {
@@ -198,7 +228,11 @@ fn handle_show(manager: &TaskManager, id: String) -> Result<(), TaskError> {
     Ok(())
 }
 
-fn handle_show_name(manager: &TaskManager, id_or_index: String, status: Option<Status>) -> Result<(), TaskError> {
+fn handle_show_name(
+    manager: &TaskManager,
+    id_or_index: String,
+    status: Option<Status>,
+) -> Result<(), TaskError> {
     let use_all = was_last_list_all();
     let filter = status_filter_from_params(status.clone(), use_all);
     let task_list = manager.list_tasks(filter)?;
@@ -227,7 +261,11 @@ fn handle_show_name(manager: &TaskManager, id_or_index: String, status: Option<S
     Ok(())
 }
 
-fn handle_edit(manager: &TaskManager, id_or_index: String, field: EditField) -> Result<(), TaskError> {
+fn handle_edit(
+    manager: &TaskManager,
+    id_or_index: String,
+    field: EditField,
+) -> Result<(), TaskError> {
     let use_all = was_last_list_all();
     let full_id = match resolve_task(manager, &id_or_index, use_all)? {
         Some(t) => t.id,
@@ -254,7 +292,11 @@ fn handle_edit(manager: &TaskManager, id_or_index: String, field: EditField) -> 
     Ok(())
 }
 
-fn handle_update_status(manager: &TaskManager, id: String, status: Status) -> Result<(), TaskError> {
+fn handle_update_status(
+    manager: &TaskManager,
+    id: String,
+    status: Status,
+) -> Result<(), TaskError> {
     let target_id = match resolve_task(manager, &id, was_last_list_all())? {
         Some(t) => t.id,
         None => {
@@ -280,7 +322,11 @@ fn handle_update_status(manager: &TaskManager, id: String, status: Status) -> Re
     Ok(())
 }
 
-fn handle_ids(manager: &TaskManager, short_only: bool, filter: Vec<Status>) -> Result<(), TaskError> {
+fn handle_ids(
+    manager: &TaskManager,
+    short_only: bool,
+    filter: Vec<Status>,
+) -> Result<(), TaskError> {
     let tasks = manager.list_tasks(StatusFilter::AnyOf(filter))?;
 
     for task in tasks {
@@ -386,7 +432,9 @@ fn calculate_list_layout(tasks: &[Task], show_descriptions: bool) -> ListLayout 
     let term = term_width();
     let base_cols = number_width + 2 + SHORT_ID_LENGTH + 1 + 1 + 1 + 1;
     let time_width = created_width;
-    let cap = term.saturating_sub(base_cols + time_width + max_due_extra).max(10);
+    let cap = term
+        .saturating_sub(base_cols + time_width + max_due_extra)
+        .max(10);
 
     let longest_date_len = time_width + max_due_extra;
     let forced_total = WRAP_COLUMN + 1 + longest_date_len;

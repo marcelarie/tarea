@@ -1,7 +1,7 @@
-use crate::types::{Task, Status};
+use crate::types::{Status, Task};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use colored::*;
-use terminal_size::{Width, terminal_size};
+use terminal_size::{terminal_size, Width};
 use textwrap::wrap;
 
 const WRAP_COLUMN: usize = 80;

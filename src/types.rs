@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
+use colored::*;
 use std::str::FromStr;
 use std::{fmt, io};
 use uuid::Uuid;
-use colored::*;
 
 #[derive(Debug)]
 pub enum TaskError {

@@ -1,10 +1,10 @@
-use crate::types::{Task, TaskError, Status, StatusFilter};
+use crate::types::{Status, StatusFilter, Task, TaskError};
 use crate::utils::validate_task_name;
-use chrono::{DateTime, Utc, NaiveDateTime};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use rusqlite::{Connection, Result as SqlResult};
+use std::io;
 use std::path::PathBuf;
 use std::{env, fs};
-use std::io;
 
 pub struct TaskManager {
     conn: Connection,
@@ -93,7 +93,11 @@ impl TaskManager {
         Ok(self.conn.execute("DELETE FROM tasks WHERE id = ?1", [id])? > 0)
     }
 
-    pub fn update_task_status(&self, short_id: &str, new_status: Status) -> Result<bool, TaskError> {
+    pub fn update_task_status(
+        &self,
+        short_id: &str,
+        new_status: Status,
+    ) -> Result<bool, TaskError> {
         let matching_ids = self.find_matching_ids(short_id)?;
 
         match matching_ids.len() {
