@@ -1,4 +1,4 @@
-use crate::TaskError;
+use crate::types::TaskError;
 use serde::{Deserialize, Serialize};
 use std::io::Write as IoWrite;
 use std::process::Command;
@@ -16,7 +16,7 @@ pub struct EditableTask {
 
 impl EditableTask {
     /// Convert a `Task` into its editable representation.
-    pub fn from_task(task: &crate::Task) -> Self {
+    pub fn from_task(task: &crate::types::Task) -> Self {
         EditableTask {
             name: task.name.clone(),
             description: task.description.clone(),
@@ -29,7 +29,7 @@ impl EditableTask {
 
 /// Launch the user’s editor with a TOML file representing the task.
 /// Returns the edited representation, or a `TaskError` on failure.
-pub fn edit_via_editor(task: &crate::Task) -> Result<EditableTask, TaskError> {
+pub fn edit_via_editor(task: &crate::types::Task) -> Result<EditableTask, TaskError> {
     let editable = EditableTask::from_task(task);
 
     let mut tmp = NamedTempFile::new().map_err(TaskError::Io)?;
