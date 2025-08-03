@@ -2,7 +2,19 @@
 
 - [x] When running --show it uses the id of the --all list not the pending default list
 - [x] --name does not work with other commands like --done --standby --pending etc
-- [ ] Improve is_due_soon, should work differently
+- [ ] Improve is_due_soon with adaptive time based thresholds
+  - [ ] Implement scaling logic based on task time horizon
+  - [ ] Create formula: warning_time = min(max_threshold, total_time * percentage)
+  - [ ] For today's tasks: trigger 'due soon' 2h before deadline
+  - [ ] For tasks 1-7 days away: trigger 'due soon' day before
+  - [ ] For tasks 1-4 weeks away: trigger 'due soon' 2-3 days before
+  - [ ] For tasks >1 month away: trigger 'due soon' 1 week before or 10% of total time
+  - [ ] Extras:
+    - [ ] For tasks <2h: use 25-50% of remaining time as threshold
+    - [ ] MAYBE: Differentiate between specific-time tasks (meetings) vs all-day tasks (deadlines) 
+    - [ ] MAYBE: Special handling for overdue tasks (different urgency state)
+    - [ ] FUTURE: Adapt threshold for recurring tasks based on recurrence pattern
+
 
 ### Todo
 
@@ -24,7 +36,7 @@
 - [ ] Show small graph of task
 - [ ] Filter by due date with `--due` and do a reverse conversion from natural
       langauge time to db time
-- [ ] Add help for `--due` with all the natural language specified
+- [x] Add help for `--due` with all the natural language specified
 - [ ] Yes flag to autoconfirm commands like --delete-database or --delete
 - [ ] Add a completed task date for when a task is passed to done, it should be
       used in the --done list to show the finished task date apart from the creation
