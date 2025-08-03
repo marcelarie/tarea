@@ -1,5 +1,4 @@
 use crate::types::TaskError;
-use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::io::Write as IoWrite;
 use std::process::Command;
@@ -87,4 +86,74 @@ pub fn edit_via_editor(task: &crate::types::Task) -> Result<EditableTask, TaskEr
     edited.description = edited.description.trim().to_string();
 
     Ok(edited)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::Task;
+    use chrono::{Local, TimeZone, Utc};
+
+    #[test]
+    fn test_editable_task_from_task_converts_to_local_time() {
+        // Create a task with a specific UTC time
+        let local_time = Local.with_ymd_and_hms(2025, 8, 15, 15, 30, 0).unwrap();
+        let utc_time = local_time.with_timezone(&Utc);
+        
+        let task = Task {
+            id: "test-id".to_string(),
+            date: "2025-08-15 15:30:00".to_string(),
+            name: "Test task".to_string(),
+            description: "Test description".to_string(),
+            status: crate::types::Status::Pending,
+            due_date: Some(utc_time),
+        };
+
+        let editable = EditableTask::from_task(&task);
+        
+        // The editable task should show the original local time, not UTC
+        assert_eq!(editable.due, Some("2025-08-15 15:30:00".to_string()));
+        assert_eq!(editable.name, "Test task");
+        assert_eq!(editable.description, "Test description");
+    }
+
+    #[test]
+    fn test_editable_task_from_task_with_no_due_date() {
+        let task = Task {
+            id: "test-id".to_string(),
+            date: "2025-08-15 15:30:00".to_string(),
+            name: "Test task".to_string(),
+            description: "Test description".to_string(),
+            status: crate::types::Status::Pending,
+            due_date: None,
+        };
+
+        let editable = EditableTask::from_task(&task);
+        
+        assert_eq!(editable.due, None);
+        assert_eq!(editable.name, "Test task");
+        assert_eq!(editable.description, "Test description");
+    }
+
+    #[test]
+    fn test_editable_task_timezone_consistency() {
+        // Test that the conversion maintains timezone consistency
+        // What the user enters should be what they see in the editor
+        let user_local_time = Local.with_ymd_and_hms(2025, 12, 25, 14, 30, 0).unwrap();
+        let stored_utc_time = user_local_time.with_timezone(&Utc);
+        
+        let task = Task {
+            id: "test-id".to_string(),
+            date: "2025-12-25 14:30:00".to_string(),
+            name: "Christmas task".to_string(),
+            description: "".to_string(),
+            status: crate::types::Status::Pending,
+            due_date: Some(stored_utc_time),
+        };
+
+        let editable = EditableTask::from_task(&task);
+        
+        // Should show the original local time the user entered
+        assert_eq!(editable.due, Some("2025-12-25 14:30:00".to_string()));
+    }
 }

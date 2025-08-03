@@ -251,7 +251,6 @@ pub fn pretty_time(dt: DateTime<Utc>) -> String {
     // - 23:59:59 local time = "today"/"tomorrow" input (should use relative time)
     let local_dt = dt.with_timezone(&chrono::Local);
     let is_date_only = local_dt.time().hour() == 0 && local_dt.time().minute() == 0 && local_dt.time().second() == 0;
-    let is_end_of_day = local_dt.time().hour() == 23 && local_dt.time().minute() == 59 && local_dt.time().second() == 59;
 
     // Use relative time for "today"/"tomorrow" (23:59:59) and other time-specific tasks
     // But never for date-only tasks (00:00:00)
@@ -279,8 +278,15 @@ pub fn pretty_time(dt: DateTime<Utc>) -> String {
         };
     }
 
-    let d = dt.date_naive();
-    let nd = now.date_naive();
+    // For date-only tasks, use local date for comparison to show correct date
+    // For time-specific tasks, use UTC date as before
+    let (d, nd) = if is_date_only {
+        let local_dt = dt.with_timezone(&chrono::Local);
+        let local_now = now.with_timezone(&chrono::Local);
+        (local_dt.date_naive(), local_now.date_naive())
+    } else {
+        (dt.date_naive(), now.date_naive())
+    };
     let diff_days = (d - nd).num_days();
 
     match diff_days {
@@ -290,9 +296,9 @@ pub fn pretty_time(dt: DateTime<Utc>) -> String {
         -1 => format!("yesterday at {}", dt.with_timezone(&chrono::Local).format("%H:%M")),
         1 if is_date_only => "tomorrow".to_string(),
         1 => format!("tomorrow at {}", dt.with_timezone(&chrono::Local).format("%H:%M")),
-        -6..=6 if is_date_only => dt.format("%A").to_string(),
+        -6..=6 if is_date_only => dt.with_timezone(&chrono::Local).format("%A").to_string(),
         -6..=6 => dt.with_timezone(&chrono::Local).format("%A at %H:%M").to_string(),
-        _ if is_date_only => dt.format("%Y-%m-%d").to_string(),
+        _ if is_date_only => dt.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string(),
         _ => dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string(),
     }
 }
@@ -332,4 +338,106 @@ fn term_width() -> usize {
     terminal_size()
         .map(|(Width(w), _)| w as usize)
         .unwrap_or(80)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{Local, TimeZone, Utc};
+
+    #[test]
+    fn test_pretty_time_date_only_shows_no_time() {
+        // Create a date-only task (midnight local time converted to UTC)
+        let local_midnight = Local.with_ymd_and_hms(2025, 8, 15, 0, 0, 0).unwrap();
+        let utc_dt = local_midnight.with_timezone(&Utc);
+        
+        let result = pretty_time(utc_dt);
+        
+        // Should show the original date entered by user (2025-08-15) without time
+        assert!(result.contains("2025-08-15") && !result.contains(":"));
+    }
+
+    #[test]  
+    fn test_pretty_time_with_time_shows_local_time() {
+        // Create a datetime task (15:30 local time converted to UTC)
+        let local_dt = Local.with_ymd_and_hms(2025, 8, 15, 15, 30, 0).unwrap();
+        let utc_dt = local_dt.with_timezone(&Utc);
+        
+        let result = pretty_time(utc_dt);
+        
+        // Should show the original local time (15:30), not UTC time
+        assert!(result.contains("15:30"));
+    }
+
+    #[test]
+    fn test_pretty_time_date_only_within_week_shows_weekday() {
+        // Test a date-only task that falls within the current week (but not today/tomorrow)
+        let now = Local::now();
+        let in_three_days = now.date_naive() + chrono::Duration::days(3);
+        let future_midnight = Local.from_local_datetime(&in_three_days.and_hms_opt(0, 0, 0).unwrap()).single().unwrap();
+        let utc_dt = future_midnight.with_timezone(&Utc);
+        
+        let result = pretty_time(utc_dt);
+        
+        // Should show weekday name without time for date-only tasks within week range
+        let days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+        let shows_weekday = days.iter().any(|day| result.contains(day));
+        let has_no_time = !result.contains(":");
+        
+        // Should either show weekday or special case like "tomorrow" - both are acceptable for date-only
+        assert!(has_no_time && (shows_weekday || result == "tomorrow" || result == "today"));
+    }
+
+    #[test]
+    fn test_pretty_time_end_of_day_shows_relative_time() {
+        // Test "today"/"tomorrow" tasks (saved as 23:59:59)
+        let now = Local::now();
+        let today_end = now.date_naive().and_hms_opt(23, 59, 59).unwrap()
+            .and_local_timezone(Local).unwrap();
+        let utc_dt = today_end.with_timezone(&Utc);
+        
+        let result = pretty_time(utc_dt);
+        
+        // Should show relative time format for today/tomorrow tasks
+        assert!(result.contains("in ") || result.contains(" ago"));
+    }
+
+    #[test]
+    fn test_pretty_time_timezone_consistency() {
+        // Test that input time matches output time (timezone consistency)
+        let local_time = Local.with_ymd_and_hms(2025, 8, 15, 14, 30, 0).unwrap();
+        let utc_time = local_time.with_timezone(&Utc);
+        
+        let result = pretty_time(utc_time);
+        
+        // The displayed time should match the original local time
+        assert!(result.contains("14:30"));
+        assert!(!result.contains("12:30")); // Should not show UTC time
+    }
+
+    #[test]
+    fn test_pretty_time_date_only_far_future() {
+        // Test date-only task far in the future
+        let future_date = Local.with_ymd_and_hms(2026, 12, 25, 0, 0, 0).unwrap();
+        let utc_dt = future_date.with_timezone(&Utc);
+        
+        let result = pretty_time(utc_dt);
+        
+        // Should show the original date entered by user without time
+        assert!(result.contains("2026-12-25"));
+        assert!(!result.contains(":"));
+    }
+
+    #[test]
+    fn test_pretty_time_preserves_user_midnight() {
+        // Test that user-specified midnight (00:00) is treated as date-only
+        let user_midnight = Local.with_ymd_and_hms(2025, 8, 15, 0, 0, 0).unwrap();
+        let utc_dt = user_midnight.with_timezone(&Utc);
+        
+        let result = pretty_time(utc_dt);
+        
+        // Should be treated as date-only (this is the limitation mentioned in TODO)
+        // but it's the current expected behavior
+        assert!(!result.contains(":") || result == "today" || result == "tomorrow");
+    }
 }
