@@ -29,6 +29,8 @@ All notable changes to this project will be documented in this file.
 - Description indentation and wrapping
 - Allow to use --name with status params like `tarea --done --name`
 - Trim multi-line desc in external editor toml file before saving
+- Timezone handling and date parsing
+- *(display)* Correct timezone handling for date-only tasks
 
 ### Other
 
