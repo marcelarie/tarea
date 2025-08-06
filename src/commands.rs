@@ -147,6 +147,8 @@ fn handle_delete(
             if confirmed {
                 if manager.delete_task_by_id(&task.id)? {
                     println!("{}", "success".bright_green());
+                    println!();
+                    handle_list(manager, status, use_all, false)?;
                 } else {
                     println!(
                         "{}",
