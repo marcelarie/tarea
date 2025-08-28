@@ -148,6 +148,7 @@ fn handle_delete(
                 if manager.delete_task_by_id(&task.id)? {
                     println!("{}", "success".bright_green());
                     println!();
+                    println!("Updated list of tasks:");
                     handle_list(manager, status, use_all, false)?;
                 } else {
                     println!(
@@ -324,8 +325,12 @@ fn handle_update_status(
             };
             println!(
                 "{}",
-                format!("Task {} marked as {}", id, status).color(color)
+                format!("Task {} marked as {}", id, &status).color(color)
             );
+            println!();
+            println!("Updated list of tasks:");
+            let use_all = was_last_list_all();
+            handle_list(manager, Some(status), use_all, false)?;
         }
         false => println!("{}", format_task_not_found_message(&id, None)),
     }

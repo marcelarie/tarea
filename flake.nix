@@ -40,6 +40,7 @@
     };
 
     devShells = forEachSupportedSystem ({pkgs}: {
+      name = "tarea-rs-shell";
       default = pkgs.mkShell {
         packages = with pkgs; [
           rustToolchain
